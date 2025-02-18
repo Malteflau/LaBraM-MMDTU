@@ -755,13 +755,86 @@ class TUEVLoader(torch.utils.data.Dataset):
         Y = int(sample["label"][0] - 1)
         X = torch.FloatTensor(X)
         return X, Y
+
+class DTULoader(torch.utils.data.Dataset):
+    def __init__(self, root, files, sampling_rate=200):
+        self.root = root
+        self.files = files
+        self.default_rate = 200
+        self.sampling_rate = sampling_rate
+        
+        # Define channel mapping
+        self.channel_mapping = {
+            'Fp1': 'EEG Fp1-REF', 'AF7': 'EEG AF7-REF', 'AF3': 'EEG AF3-REF',
+            # ... add all your channel mappings here
+        }
+
+    def __len__(self):
+        return len(self.files)
+
+    def __getitem__(self, index):
+        sample = pickle.load(open(os.path.join(self.root, self.files[index]), "rb"))
+        # Adjust these lines according to your data format
+        X = sample["X"]  # or whatever key your data uses
+        if self.sampling_rate != self.default_rate:
+            X = resample(X, 10 * self.sampling_rate, axis=-1)
+        Y = sample["y"]  # or whatever key your labels use
+        X = torch.FloatTensor(X)
+        return X, Y
+
+def prepare_DTU_data():
+    data = "/Users/maltelau/Desktop/LaBraM/LaBraM/DataProcessed/f"
     
+    if not os.path.exists(data):
+        raise FileNotFoundError(f"Data directory not found: {data}")
+
+    seed = 4523
+    np.random.seed(seed)
+
+    # Get only .pkl files if that's what you're using
+    files = [f for f in os.listdir(data) if f.endswith('.pkl')]
+    if not files:
+        raise ValueError(f"No valid files found in {data}")
+        
+    np.random.shuffle(files)
+
+    train_files = files[:int(0.8 * len(files))]
+    val_files = files[int(0.8 * len(files)):int(0.9 * len(files))]
+    test_files = files[int(0.9 * len(files)):]
+
+    # Use DTULoader instead of TUABLoader
+    train_dataset = DTULoader(data, train_files)
+    val_dataset = DTULoader(data, val_files)
+    test_dataset = DTULoader(data, test_files)
+
+    print(f"DTU Data Split:")
+    print(f"Train: {len(train_files)} files")
+    print(f"Val: {len(val_files)} files")
+    print(f"Test: {len(test_files)} files")
+
+    return train_dataset, val_dataset, test_dataset
+
+def prepare_DTU_data():
+    # load the dataset from DataProcessed/f and split it randomly into train val and test
+    data = "/Users/maltelau/Desktop/LaBraM/LaBraM/DataProcessed/f"
+    #split data into train test and val
+    files = os.listdir(data)
+    np.random.shuffle(files)
+    train_files = files[:int(0.8 * len(files))]
+    val_files = files[int(0.8 * len(files)):int(0.9 * len(files))]
+    test_files = files[int(0.9 * len(files)):]
+    # prepare training and test data loader
+    train_dataset = DTULoader(data, train_files)
+    test_dataset = DTULoader(data, test_files)
+    val_dataset = DTULoader(data, val_files)
+    return train_dataset, test_dataset, val_dataset
+
 
 def prepare_TUEV_dataset(root):
     # set random seed
     seed = 4523
     np.random.seed(seed)
-
+    
     train_files = os.listdir(os.path.join(root, "processed_train"))
     val_files = os.listdir(os.path.join(root, "processed_eval"))
     test_files = os.listdir(os.path.join(root, "processed_test"))
@@ -781,6 +854,7 @@ def prepare_TUEV_dataset(root):
     )
     print(len(train_files), len(val_files), len(test_files))
     return train_dataset, test_dataset, val_dataset
+
 
 
 def prepare_TUAB_dataset(root):
