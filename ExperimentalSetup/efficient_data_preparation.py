@@ -17,14 +17,16 @@ import pandas as pd
 import pickle
 import h5py
 import dill  # For serializing functions
+import argparse
 from pathlib import Path
 from typing import List, Dict, Tuple, Callable, Optional, Union
 import random
 import gc
+import sys
 
 
-def create_combined_df(eeg_folder_path: str, overview_path: str, 
-                       behavior_path: str = None) -> pd.DataFrame:
+def create_combined_df(eeg_folder_path: Path, overview_path: Path, 
+                       behavior_path: Optional[Path] = None) -> Tuple[pd.DataFrame, Dict[str, np.ndarray]]:
     """
     Create a combined DataFrame with EEG data and metadata.
     
@@ -34,40 +36,68 @@ def create_combined_df(eeg_folder_path: str, overview_path: str,
         behavior_path: Path to the behavioral features DataFrame pickle file
         
     Returns:
-        Combined DataFrame with metadata (without EEG data)
+        Combined DataFrame with metadata (without EEG data) and EEG data dictionary
     """
     # Load metadata dataframes
-    with open(overview_path, "rb") as f:
-        overview_df = pickle.load(f)
+    try:
+        with open(overview_path, "rb") as f:
+            overview_df = pickle.load(f)
+        print(f"Loaded overview data from {overview_path}")
+    except (FileNotFoundError, IOError) as e:
+        print(f"Error loading overview data: {e}")
+        sys.exit(1)
     
     if behavior_path:
-        with open(behavior_path, "rb") as f:
-            behavior_df = pickle.load(f)
+        try:
+            with open(behavior_path, "rb") as f:
+                behavior_df = pickle.load(f)
+            print(f"Loaded behavior data from {behavior_path}")
+        except (FileNotFoundError, IOError) as e:
+            print(f"Warning: Failed to load behavior data: {e}")
+            behavior_df = None
     else:
         behavior_df = None
 
     # Initialize lists to store data
     all_data = []
 
+    # Check if EEG folder exists
+    if not eeg_folder_path.exists():
+        print(f"Error: EEG folder {eeg_folder_path} does not exist")
+        sys.exit(1)
+
     # Get list of all .fif files
-    fif_files = [f for f in os.listdir(eeg_folder_path) if f.endswith('.fif')]
+    fif_files = list(eeg_folder_path.glob('*.fif'))
+    if not fif_files:
+        print(f"Error: No .fif files found in {eeg_folder_path}")
+        sys.exit(1)
+    
+    print(f"Found {len(fif_files)} .fif files")
     
     # Create EEG data structure
     eeg_data_dict = {}
-    fif_files = fif_files[:10]  # For testing purposes
+    
+    # For testing, limit the number of files (commented out for production)
+    # fif_files = fif_files[:10]
+    
     # Process each file
     for fif_file in fif_files:
         # Extract participant ID from filename
-        participant_id = fif_file.split('_')[0]
-        triad_id = int(participant_id[:3])
+        participant_id = fif_file.stem.split('_')[0]
+        try:
+            triad_id = int(participant_id[:3])
+        except ValueError:
+            print(f"Warning: Could not extract triad_id from {participant_id}, skipping")
+            continue
         
         # Get participant overview data
-        if not overview_df[overview_df['Exp_id'] == participant_id].empty:
-            participant_overview = overview_df[overview_df['Exp_id'] == participant_id].iloc[0]
+        participant_matches = overview_df[overview_df['Exp_id'] == participant_id]
+        if not participant_matches.empty:
+            participant_overview = participant_matches.iloc[0]
             
             try:
                 # Load epochs
-                epochs = mne.read_epochs(os.path.join(eeg_folder_path, fif_file), preload=True)
+                epochs = mne.read_epochs(str(fif_file), preload=True)
                 eeg_data_np = epochs.get_data()
                 
                 # Normalize EEG data to 0.1 mV as LaBraM expects
@@ -135,6 +165,8 @@ def create_combined_df(eeg_folder_path: str, overview_path: str,
                                     row_data[f'beh_{feature.lower()}'] = feature_rows['Value'].values[0]
                     
                     all_data.append(row_data)
+                
+                print(f"Processed {participant_id}: {len(epochs)} epochs")
                     
                 # Free up memory
                 del epochs
@@ -172,17 +204,23 @@ def save_eeg_data_to_h5(eeg_data_dict: Dict[str, np.ndarray], output_file: Path)
         eeg_data_dict: Dictionary of participant_id -> EEG data array
         output_file: Path to save the HDF5 file
     """
-    with h5py.File(output_file, 'w') as h5file:
-        for participant_id, eeg_data in eeg_data_dict.items():
-            # Create group for this participant
-            participant_group = h5file.create_group(participant_id)
+    # Create parent directories if they don't exist
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+    
+    try:
+        with h5py.File(output_file, 'w') as h5file:
+            for participant_id, eeg_data in eeg_data_dict.items():
+                # Create group for this participant
+                participant_group = h5file.create_group(participant_id)
+                
+                # Save EEG data
+                participant_group.create_dataset('epochs', data=eeg_data, 
+                                               chunks=(1, eeg_data.shape[1], min(1000, eeg_data.shape[2])),
+                                               compression='gzip', compression_opts=4)
             
-            # Save EEG data
-            participant_group.create_dataset('epochs', data=eeg_data, 
-                                           chunks=(1, eeg_data.shape[1], min(1000, eeg_data.shape[2])),
-                                           compression='gzip', compression_opts=4)
-            
-    print(f"Saved EEG data to {output_file}")
+        print(f"Saved EEG data to {output_file}")
+    except Exception as e:
+        print(f"Error saving EEG data to HDF5: {e}")
 
 
 def parse_condition_type(condition):
@@ -267,13 +305,16 @@ def create_prediction_mapping(
     mapping_dir = output_dir / 'condition_mappings'
     mapping_dir.mkdir(exist_ok=True, parents=True)
     
-    with open(mapping_dir / f"{name}.pkl", 'wb') as f:
-        pickle.dump(mapping, f)
-    
-    print(f"Created {name} prediction mapping:")
-    print(f"  Train: {len(train_indices)} samples from {len(train_participants)} participants")
-    print(f"  Test: {len(test_indices)} samples from {len(all_participants) - len(train_participants)} participants")
-    print(f"  Class distribution in train: {pd.Series(temp_df.iloc[train_indices]['y']).value_counts().to_dict()}")
+    try:
+        with open(mapping_dir / f"{name}.pkl", 'wb') as f:
+            pickle.dump(mapping, f)
+        
+        print(f"Created {name} prediction mapping:")
+        print(f"  Train: {len(train_indices)} samples from {len(train_participants)} participants")
+        print(f"  Test: {len(test_indices)} samples from {len(all_participants) - len(train_participants)} participants")
+        print(f"  Class distribution in train: {pd.Series(temp_df.iloc[train_indices]['y']).value_counts().to_dict()}")
+    except Exception as e:
+        print(f"Error saving prediction mapping for {name}: {e}")
     
     return train_indices, test_indices
 
@@ -411,24 +452,27 @@ def test_data_integration(metadata_df, eeg_h5_path):
     
     # 5. Check EEG data
     print("\nEEG data check:")
-    with h5py.File(eeg_h5_path, 'r') as h5file:
-        # Get a random participant
-        participants = list(h5file.keys())
-        if participants:
-            participant_id = participants[0]
-            print(f"  Participant: {participant_id}")
-            
-            # Get epochs dataset
-            epochs = h5file[participant_id]['epochs']
-            print(f"  EEG data shape: {epochs.shape}")
-            print(f"  First epoch shape: {epochs[0].shape}")
-            
-            # Get a sample from the first epoch
-            sample = epochs[0, :, :100]  # First 100 time points of first epoch
-            print(f"  Min value: {np.min(sample)}")
-            print(f"  Max value: {np.max(sample)}")
-        else:
-            print("  No participants found in HDF5 file")
+    try:
+        with h5py.File(eeg_h5_path, 'r') as h5file:
+            # Get a random participant
+            participants = list(h5file.keys())
+            if participants:
+                participant_id = participants[0]
+                print(f"  Participant: {participant_id}")
+                
+                # Get epochs dataset
+                epochs = h5file[participant_id]['epochs']
+                print(f"  EEG data shape: {epochs.shape}")
+                print(f"  First epoch shape: {epochs[0].shape}")
+                
+                # Get a sample from the first epoch
+                sample = epochs[0, :, :100]  # First 100 time points of first epoch
+                print(f"  Min value: {np.min(sample)}")
+                print(f"  Max value: {np.max(sample)}")
+            else:
+                print("  No participants found in HDF5 file")
+    except Exception as e:
+        print(f"  Error checking EEG data: {e}")
     
     # 6. Verify condition parsing
     print("\nCondition type parsing:")
@@ -438,7 +482,7 @@ def test_data_integration(metadata_df, eeg_h5_path):
     
     # 7. Sample a few rows to verify mapping
     print("\nSample mapping check:")
-    sample_idx = np.random.randint(0, len(metadata_df), size=3)
+    sample_idx = np.random.randint(0, len(metadata_df), size=min(3, len(metadata_df)))
     for idx in sample_idx:
         row = metadata_df.iloc[idx]
         print(f"\n  Sample {idx}:")
@@ -456,13 +500,16 @@ def test_data_integration(metadata_df, eeg_h5_path):
             print("    No behavioral features found for this sample")
             
         # Check that we can access EEG data using the reference
-        with h5py.File(eeg_h5_path, 'r') as h5file:
-            participant_id, epoch_idx = row['eeg_reference']
-            if participant_id in h5file:
-                eeg_data = h5file[participant_id]['epochs'][epoch_idx]
-                print(f"    Successfully accessed EEG data with shape {eeg_data.shape}")
-            else:
-                print(f"    Could not find participant {participant_id} in HDF5 file")
+        try:
+            with h5py.File(eeg_h5_path, 'r') as h5file:
+                participant_id, epoch_idx = row['eeg_reference']
+                if participant_id in h5file:
+                    eeg_data = h5file[participant_id]['epochs'][epoch_idx]
+                    print(f"    Successfully accessed EEG data with shape {eeg_data.shape}")
+                else:
+                    print(f"    Could not find participant {participant_id} in HDF5 file")
+        except Exception as e:
+            print(f"    Error accessing EEG data: {e}")
 
 
 def save_label_functions(output_dir):
@@ -486,20 +533,59 @@ def save_label_functions(output_dir):
     }
     
     for name, func in functions.items():
-        with open(func_dir / f"{name}.dill", 'wb') as f:
-            dill.dump(func, f)
+        try:
+            with open(func_dir / f"{name}.dill", 'wb') as f:
+                dill.dump(func, f)
+        except Exception as e:
+            print(f"Error saving function {name}: {e}")
     
     print(f"Saved label functions to {func_dir}")
 
 
-if __name__ == "__main__":
-    # Define paths
-    eeg_folder_path = "/Users/maltelau/Desktop/LaBraM-MMDTU/LaBraM-MMDTU/DTUDATA/FG_Data/PreprocessedEEGData"
-    overview_path = "/Users/maltelau/Desktop/LaBraM-MMDTU/LaBraM-MMDTU/DTUDATA/FG_Data/FG_overview_df_v2.pkl"
-    behavior_path = "/Users/maltelau/Desktop/LaBraM-MMDTU/LaBraM-MMDTU/DTUDATA/FG_Data/Beh_feat_df_v2.pkl"
+def parse_arguments():
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(description="Prepare EEG data for LaBraM")
     
-    output_dir = Path("./DataProcessed")
+    # Input paths
+    parser.add_argument('--eeg-folder', type=str, required=True,
+                        help='Path to folder containing preprocessed EEG .fif files')
+    parser.add_argument('--overview-file', type=str, required=True,
+                        help='Path to the overview DataFrame pickle file')
+    parser.add_argument('--behavior-file', type=str, default=None,
+                        help='Path to the behavioral features DataFrame pickle file')
+    
+    # Output paths
+    parser.add_argument('--output-dir', type=str, default='./DataProcessed',
+                        help='Directory to save processed data')
+    
+    # Processing options
+    parser.add_argument('--test-mode', action='store_true', default=False,
+                        help='Run in test mode with limited processing')
+    parser.add_argument('--skip-integration-test', action='store_true', default=False,
+                        help='Skip data integration testing')
+    
+    # Parse the arguments
+    return parser.parse_args()
+
+
+if __name__ == "__main__":
+    # Parse command line arguments
+    args = parse_arguments()
+    
+    # Convert string paths to Path objects
+    eeg_folder_path = Path(args.eeg_folder)
+    overview_path = Path(args.overview_file)
+    behavior_path = Path(args.behavior_file) if args.behavior_file else None
+    output_dir = Path(args.output_dir)
+    
+    # Create output directory
     output_dir.mkdir(parents=True, exist_ok=True)
+    
+    print(f"Input paths:")
+    print(f"  EEG folder: {eeg_folder_path}")
+    print(f"  Overview file: {overview_path}")
+    print(f"  Behavior file: {behavior_path}")
+    print(f"Output directory: {output_dir}")
     
     # 1. Create combined DataFrame and process EEG data
     metadata_df, eeg_data_dict = create_combined_df(
@@ -509,8 +595,12 @@ if __name__ == "__main__":
     )
     
     # 2. Save metadata DataFrame (without EEG data)
-    metadata_df.to_pickle(output_dir / "metadata.pkl")
-    print(f"\nSaved metadata DataFrame to {output_dir / 'metadata.pkl'}")
+    metadata_path = output_dir / "metadata.pkl"
+    try:
+        metadata_df.to_pickle(metadata_path)
+        print(f"\nSaved metadata DataFrame to {metadata_path}")
+    except Exception as e:
+        print(f"Error saving metadata: {e}")
     
     # 3. Save EEG data to HDF5
     eeg_h5_path = output_dir / "eeg_data.h5"
@@ -542,6 +632,7 @@ if __name__ == "__main__":
     save_label_functions(output_dir)
     
     # 6. Test data integration
-    test_data_integration(metadata_df, eeg_h5_path)
+    if not args.skip_integration_test:
+        test_data_integration(metadata_df, eeg_h5_path)
     
     print("\nEfficient data preparation complete!")
