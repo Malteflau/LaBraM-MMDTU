@@ -85,3 +85,60 @@ Check the documentation of torch.load to learn more about types accepted by defa
 2025-02-25 23:55:30,730 - __main__ - INFO - Arguments: Namespace(h5_path='/Users/maltelau/Desktop/LaBraM-MMDTU/LaBraM-MMDTU/DataProcessed/eeg_data.h5', output_dir='/Users/maltelau/Desktop/LaBraM-MMDTU/LaBraM-MMDTU/output', log_dir=None, model='labram_base_patch200_1600_8k_vocab', model_path='/Users/maltelau/Desktop/LaBraM-MMDTU/LaBraM-MMDTU/checkpoints/labram-base.pth', pretrained=True, rel_pos_bias=False, abs_pos_emb=True, layer_scale_init_value=0.1, drop_path=0.1, tokenizer_model='vqnsp_encoder_base_decoder_3x200x12', tokenizer_weight='/Users/maltelau/Desktop/LaBraM-MMDTU/LaBraM-MMDTU/checkpoints/vqnsp.pth', codebook_size=8192, codebook_dim=64, batch_size=32, num_workers=4, resample_hz=200, epochs=50, start_epoch=0, lr=0.0005, min_lr=1e-05, warmup_epochs=5, weight_decay=0.05, clip_grad=3.0, save_ckpt_freq=5, opt='adamw', opt_eps=1e-08, opt_betas=[0.9, 0.999], seed=42, device='cuda')
 2025-02-25 23:56:03,827 - __main__ - INFO - Starting LaBraM pre-training fine-tuning
 2025-02-25 23:56:03,828 - __main__ - INFO - Arguments: Namespace(h5_path='/Users/maltelau/Desktop/LaBraM-MMDTU/LaBraM-MMDTU/DataProcessed/eeg_data.h5', output_dir='/Users/maltelau/Desktop/LaBraM-MMDTU/LaBraM-MMDTU/output', log_dir=None, model='labram_base_patch200_1600_8k_vocab', model_path='/Users/maltelau/Desktop/LaBraM-MMDTU/LaBraM-MMDTU/checkpoints/labram-base.pth', pretrained=True, rel_pos_bias=False, abs_pos_emb=True, layer_scale_init_value=0.1, drop_path=0.1, tokenizer_model='vqnsp_encoder_base_decoder_3x200x12', tokenizer_weight='/Users/maltelau/Desktop/LaBraM-MMDTU/LaBraM-MMDTU/checkpoints/vqnsp.pth', codebook_size=8192, codebook_dim=64, batch_size=32, num_workers=4, resample_hz=200, epochs=50, start_epoch=0, lr=0.0005, min_lr=1e-05, warmup_epochs=5, weight_decay=0.05, clip_grad=3.0, save_ckpt_freq=5, opt='adamw', opt_eps=1e-08, opt_betas=[0.9, 0.999], seed=42, device='cuda')
+2025-02-26 12:16:26,417 - __main__ - INFO - Starting LaBraM pre-training fine-tuning
+2025-02-26 12:16:26,417 - __main__ - INFO - Arguments: Namespace(h5_path='/Users/maltelau/Desktop/LaBraM-MMDTU/LaBraM-MMDTU/DataProcessed/eeg_data.h5', output_dir='/Users/maltelau/Desktop/LaBraM-MMDTU/LaBraM-MMDTU/output', log_dir=None, model='labram_base_patch200_1600_8k_vocab', model_path='/Users/maltelau/Desktop/LaBraM-MMDTU/LaBraM-MMDTU/checkpoints/labram-base.pth', pretrained=True, rel_pos_bias=False, abs_pos_emb=True, layer_scale_init_value=0.1, drop_path=0.1, tokenizer_model='vqnsp_encoder_base_decoder_3x200x12', tokenizer_weight='/Users/maltelau/Desktop/LaBraM-MMDTU/LaBraM-MMDTU/checkpoints/vqnsp.pth', codebook_size=8192, codebook_dim=64, batch_size=32, num_workers=4, resample_hz=200, epochs=50, start_epoch=0, lr=0.0005, min_lr=1e-05, warmup_epochs=5, weight_decay=0.05, clip_grad=3.0, save_ckpt_freq=5, opt='adamw', opt_eps=1e-08, opt_betas=[0.9, 0.999], seed=42, device='cuda')
+2025-02-26 12:16:26,419 - __main__ - INFO - Using device: cpu
+2025-02-26 12:18:38,813 - __main__ - INFO - Starting LaBraM pre-training fine-tuning
+2025-02-26 12:18:38,813 - __main__ - INFO - Arguments: Namespace(h5_path='/Users/maltelau/Desktop/LaBraM-MMDTU/LaBraM-MMDTU/DataProcessed/eeg_data.h5', output_dir='/Users/maltelau/Desktop/LaBraM-MMDTU/LaBraM-MMDTU/output', log_dir=None, model='labram_base_patch200_1600_8k_vocab', model_path='/Users/maltelau/Desktop/LaBraM-MMDTU/LaBraM-MMDTU/checkpoints/labram-base.pth', pretrained=True, rel_pos_bias=False, abs_pos_emb=True, layer_scale_init_value=0.1, drop_path=0.1, tokenizer_model='vqnsp_encoder_base_decoder_3x200x12', tokenizer_weight='/Users/maltelau/Desktop/LaBraM-MMDTU/LaBraM-MMDTU/checkpoints/vqnsp.pth', codebook_size=8192, codebook_dim=64, batch_size=32, num_workers=4, resample_hz=200, epochs=50, start_epoch=0, lr=0.0005, min_lr=1e-05, warmup_epochs=5, weight_decay=0.05, clip_grad=3.0, save_ckpt_freq=5, opt='adamw', opt_eps=1e-08, opt_betas=[0.9, 0.999], seed=42, device='cuda')
+2025-02-26 12:18:38,815 - __main__ - INFO - Using device: cpu
+2025-02-26 12:18:39,151 - __main__ - INFO - Loading model: labram_base_patch200_1600_8k_vocab
+2025-02-26 12:18:39,151 - __main__ - ERROR - Error creating model: modeling_pretrain.NeuralTransformerForMEM() got multiple values for keyword argument 'norm_layer'
+2025-02-26 12:18:39,152 - __main__ - ERROR - Traceback (most recent call last):
+  File "/Users/maltelau/Desktop/LaBraM-MMDTU/LaBraM-MMDTU/ExperimentalSetup/labrampre.py", line 444, in main
+    model = model_class(**model_kwargs)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/maltelau/Desktop/LaBraM-MMDTU/LaBraM-MMDTU/modeling_pretrain.py", line 279, in labram_base_patch200_1600_8k_vocab
+    model = NeuralTransformerForMEM(
+            ^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: modeling_pretrain.NeuralTransformerForMEM() got multiple values for keyword argument 'norm_layer'
+
+2025-02-26 12:25:00,421 - __main__ - INFO - Starting LaBraM pre-training fine-tuning
+2025-02-26 12:25:00,421 - __main__ - INFO - Arguments: Namespace(h5_path='/Users/maltelau/Desktop/LaBraM-MMDTU/LaBraM-MMDTU/DataProcessed/eeg_data.h5', output_dir='/Users/maltelau/Desktop/LaBraM-MMDTU/LaBraM-MMDTU/output', log_dir=None, model='labram_base_patch200_1600_8k_vocab', model_path='/Users/maltelau/Desktop/LaBraM-MMDTU/LaBraM-MMDTU/checkpoints/labram-base.pth', pretrained=True, rel_pos_bias=False, abs_pos_emb=True, layer_scale_init_value=0.1, drop_path=0.1, tokenizer_model='vqnsp_encoder_base_decoder_3x200x12', tokenizer_weight='/Users/maltelau/Desktop/LaBraM-MMDTU/LaBraM-MMDTU/checkpoints/vqnsp.pth', codebook_size=8192, codebook_dim=64, batch_size=32, num_workers=4, resample_hz=200, epochs=50, start_epoch=0, lr=0.0005, min_lr=1e-05, warmup_epochs=5, weight_decay=0.05, clip_grad=3.0, save_ckpt_freq=5, opt='adamw', opt_eps=1e-08, opt_betas=[0.9, 0.999], seed=42, device='cuda')
+2025-02-26 12:25:00,423 - __main__ - INFO - Using device: cpu
+2025-02-26 12:25:00,742 - __main__ - INFO - Loading model: labram_base_patch200_1600_8k_vocab
+2025-02-26 12:25:00,742 - __main__ - INFO - Loading model: labram_base_patch200_1600_8k_vocab
+2025-02-26 12:25:00,908 - __main__ - INFO - Successfully created model: labram_base_patch200_1600_8k_vocab
+2025-02-26 12:25:00,909 - __main__ - INFO - Model moved to cpu
+2025-02-26 12:25:00,910 - __main__ - INFO - Model = NeuralTransformerForMEM
+2025-02-26 12:25:00,910 - __main__ - INFO - Number of trainable parameters: 9153520
+2025-02-26 12:25:52,627 - __main__ - INFO - Starting LaBraM pre-training fine-tuning
+2025-02-26 12:25:52,628 - __main__ - INFO - Arguments: Namespace(h5_path='/Users/maltelau/Desktop/LaBraM-MMDTU/LaBraM-MMDTU/DataProcessed/eeg_data.h5', output_dir='/Users/maltelau/Desktop/LaBraM-MMDTU/LaBraM-MMDTU/output', log_dir=None, model='labram_base_patch200_1600_8k_vocab', model_path='/Users/maltelau/Desktop/LaBraM-MMDTU/LaBraM-MMDTU/checkpoints/labram-base.pth', pretrained=True, rel_pos_bias=False, abs_pos_emb=True, layer_scale_init_value=0.1, drop_path=0.1, tokenizer_model='vqnsp_encoder_base_decoder_3x200x12', tokenizer_weight='/Users/maltelau/Desktop/LaBraM-MMDTU/LaBraM-MMDTU/checkpoints/vqnsp.pth', codebook_size=8192, codebook_dim=64, batch_size=32, num_workers=4, resample_hz=200, epochs=50, start_epoch=0, lr=0.0005, min_lr=1e-05, warmup_epochs=5, weight_decay=0.05, clip_grad=3.0, save_ckpt_freq=5, opt='adamw', opt_eps=1e-08, opt_betas=[0.9, 0.999], seed=42, device='cuda')
+2025-02-26 12:25:52,630 - __main__ - INFO - Using device: cpu
+2025-02-26 12:25:52,947 - __main__ - INFO - Loading model: labram_base_patch200_1600_8k_vocab
+2025-02-26 12:25:52,947 - __main__ - INFO - Loading model: labram_base_patch200_1600_8k_vocab
+2025-02-26 12:25:53,111 - __main__ - INFO - Successfully created model: labram_base_patch200_1600_8k_vocab
+2025-02-26 12:25:53,112 - __main__ - INFO - Model moved to cpu
+2025-02-26 12:25:53,112 - __main__ - INFO - Model = NeuralTransformerForMEM
+2025-02-26 12:25:53,112 - __main__ - INFO - Number of trainable parameters: 9153520
+2025-02-26 12:26:00,662 - __main__ - INFO - Starting LaBraM pre-training fine-tuning
+2025-02-26 12:26:00,662 - __main__ - INFO - Arguments: Namespace(h5_path='/Users/maltelau/Desktop/LaBraM-MMDTU/LaBraM-MMDTU/DataProcessed/eeg_data.h5', output_dir='/Users/maltelau/Desktop/LaBraM-MMDTU/LaBraM-MMDTU/output', log_dir=None, model='labram_base_patch200_1600_8k_vocab', model_path='/Users/maltelau/Desktop/LaBraM-MMDTU/LaBraM-MMDTU/checkpoints/labram-base.pth', pretrained=True, rel_pos_bias=False, abs_pos_emb=True, layer_scale_init_value=0.1, drop_path=0.1, tokenizer_model='vqnsp_encoder_base_decoder_3x200x12', tokenizer_weight='/Users/maltelau/Desktop/LaBraM-MMDTU/LaBraM-MMDTU/checkpoints/vqnsp.pth', codebook_size=8192, codebook_dim=64, batch_size=32, num_workers=4, resample_hz=200, epochs=50, start_epoch=0, lr=0.0005, min_lr=1e-05, warmup_epochs=5, weight_decay=0.05, clip_grad=3.0, save_ckpt_freq=5, opt='adamw', opt_eps=1e-08, opt_betas=[0.9, 0.999], seed=42, device='cuda')
+2025-02-26 12:26:00,664 - __main__ - INFO - Using device: cpu
+2025-02-26 12:26:00,934 - __main__ - INFO - Loading model: labram_base_patch200_1600_8k_vocab
+2025-02-26 12:26:00,934 - __main__ - INFO - Loading model: labram_base_patch200_1600_8k_vocab
+2025-02-26 12:26:01,095 - __main__ - INFO - Successfully created model: labram_base_patch200_1600_8k_vocab
+2025-02-26 12:26:01,096 - __main__ - INFO - Model moved to cpu
+2025-02-26 12:26:01,096 - __main__ - INFO - Model = NeuralTransformerForMEM
+2025-02-26 12:26:01,096 - __main__ - INFO - Number of trainable parameters: 9153520
+2025-02-26 12:26:01,111 - __main__ - INFO - Starting pre-training fine-tuning for 50 epochs
+2025-02-26 12:26:01,111 - __main__ - INFO - Starting epoch 0
+2025-02-26 12:34:18,887 - __main__ - INFO - Starting LaBraM pre-training fine-tuning
+2025-02-26 12:34:18,887 - __main__ - INFO - Arguments: Namespace(h5_path='/Users/maltelau/Desktop/LaBraM-MMDTU/LaBraM-MMDTU/DataProcessed/eeg_data.h5', output_dir='/Users/maltelau/Desktop/LaBraM-MMDTU/LaBraM-MMDTU/output', log_dir=None, model='labram_base_patch200_1600_8k_vocab', model_path='/Users/maltelau/Desktop/LaBraM-MMDTU/LaBraM-MMDTU/checkpoints/labram-base.pth', pretrained=True, rel_pos_bias=False, abs_pos_emb=True, layer_scale_init_value=0.1, drop_path=0.1, tokenizer_model='vqnsp_encoder_base_decoder_3x200x12', tokenizer_weight='/Users/maltelau/Desktop/LaBraM-MMDTU/LaBraM-MMDTU/checkpoints/vqnsp.pth', codebook_size=8192, codebook_dim=64, batch_size=32, num_workers=4, resample_hz=200, epochs=50, start_epoch=0, lr=0.0005, min_lr=1e-05, warmup_epochs=5, weight_decay=0.05, clip_grad=3.0, save_ckpt_freq=5, opt='adamw', opt_eps=1e-08, opt_betas=[0.9, 0.999], seed=42, device='cuda')
+2025-02-26 12:34:18,890 - __main__ - INFO - Using device: cpu
+2025-02-26 12:34:19,364 - __main__ - INFO - Loading model: labram_base_patch200_1600_8k_vocab
+2025-02-26 12:34:19,364 - __main__ - INFO - Loading model: labram_base_patch200_1600_8k_vocab
+2025-02-26 12:34:19,528 - __main__ - INFO - Successfully created model: labram_base_patch200_1600_8k_vocab
+2025-02-26 12:34:19,529 - __main__ - INFO - Model moved to cpu
+2025-02-26 12:34:19,529 - __main__ - INFO - Model = NeuralTransformerForMEM
+2025-02-26 12:34:19,529 - __main__ - INFO - Number of trainable parameters: 9153520
+2025-02-26 12:34:19,546 - __main__ - INFO - Starting pre-training fine-tuning for 50 epochs
+2025-02-26 12:34:19,546 - __main__ - INFO - Starting epoch 0

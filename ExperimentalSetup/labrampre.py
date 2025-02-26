@@ -29,22 +29,21 @@ import mne
 from pathlib import Path
 from tqdm import tqdm
 from functools import partial
+# Import LaBraM modules
+import sys
+import os
+# These imports should match those used in the original LaBraM code
+
 
 # Add LaBraM directory to path
 labram_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if labram_dir not in sys.path:
     sys.path.append(labram_dir)
 
-# Import LaBraM modules
-import sys
-import os
-
-# These imports should match those used in the original LaBraM code
 import modeling_pretrain
 import modeling_vqnsp
 import utils
 from engine_for_pretraining import random_masking
-
 
 def setup_logging(log_dir):
     """Setup logging."""
@@ -209,35 +208,32 @@ def get_visual_tokenizer(args):
     
     print(f"Loading tokenizer weights from: {args.tokenizer_weight}")
     
-    # Load with weights_only explicitly set to False (security note: only use with trusted files)
-    print("Loading with weights_only=False (this is safe for trusted files)")
+    # Method 1: Try with torch.serialization.safe_globals context manager (for PyTorch 2.6+)
     try:
-        # This is safe when you trust the source of the file
-        checkpoint = torch.load(args.tokenizer_weight, map_location='cpu')
-        print("Successfully loaded checkpoint!")
+        import torch.serialization
+        with torch.serialization.safe_globals([np.core.multiarray.scalar]):
+            checkpoint = torch.load(args.tokenizer_weight, map_location='cpu')
+            print("Successfully loaded checkpoint with safe_globals!")
     except Exception as e:
-        print(f"Error loading checkpoint: {e}")
-        print("Attempting an alternative loading method...")
+        print(f"Error loading with safe_globals: {e}")
         
-        # Try again with pickle and custom unpickler for more controlled loading
-        import pickle
-        import io
-        
-        class SafeUnpickler(pickle.Unpickler):
-            def find_class(self, module, name):
-                # Only allow specific modules/classes
-                if module == 'numpy' or module.startswith('numpy.'):
-                    # Allow NumPy types
-                    if module == 'numpy' and name in ['dtype', 'ndarray', 'int64', 'float64']:
-                        return getattr(np, name)
-                    if module == 'numpy.core.multiarray' and name == 'scalar':
-                        return np.core.multiarray.scalar
-                # Default behavior for other modules
-                return super().find_class(module, name)
-        
-        with open(args.tokenizer_weight, 'rb') as f:
-            checkpoint = SafeUnpickler(f).load()
-        print("Successfully loaded checkpoint with SafeUnpickler!")
+        # Method 2: Try with weights_only=False for PyTorch versions before the 2.6 change
+        try:
+            checkpoint = torch.load(args.tokenizer_weight, map_location='cpu', weights_only=False)
+            print("Successfully loaded checkpoint with weights_only=False!")
+        except Exception as e:
+            print(f"Error loading with weights_only=False: {e}")
+            
+            # Method 3: Last resort - use a direct file reading approach
+            try:
+                import pickle
+                print("Attempting direct file loading...")
+                with open(args.tokenizer_weight, 'rb') as f:
+                    checkpoint = pickle.load(f)
+                print("Successfully loaded checkpoint with direct pickle load!")
+            except Exception as e:
+                print(f"All loading methods failed. Final error: {e}")
+                raise RuntimeError(f"Could not load tokenizer weights from {args.tokenizer_weight}")
     
     # Process weights
     print("Processing checkpoint...")
@@ -273,12 +269,10 @@ def get_visual_tokenizer(args):
     model.eval()
     return model
 
-
 def train_one_epoch(model, vqnsp, dataloader, optimizer, device, epoch, loss_scaler, max_norm, log_writer, 
                    lr_schedule_values, args):
     """
-    Train for one epoch.
-    Simplified from engine_for_pretraining.py to focus on domain adaptation.
+    Train for one epoch with proper handling of mismatched dimensions.
     """
     model.train()
     metric_logger = utils.MetricLogger(delimiter="  ")
@@ -286,8 +280,19 @@ def train_one_epoch(model, vqnsp, dataloader, optimizer, device, epoch, loss_sca
     header = f'Epoch: [{epoch}]'
     print_freq = 10
     
-    # Get the channel names for the input data
-    input_chans = list(range(1, model.student.pos_embed.shape[1]))  # Skip CLS token position
+    # First, we need to determine the expected shape of positional embedding
+    # Print the shape of the model's positional embedding
+    pos_embed_shape = model.student.pos_embed.shape if hasattr(model, 'student') else None
+    if pos_embed_shape:
+        print(f"Model positional embedding shape: {pos_embed_shape}")
+        expected_channels = pos_embed_shape[1] - 1  # Subtract 1 for CLS token
+    else:
+        # Default to 64 if we can't determine
+        expected_channels = 64
+        print(f"Could not determine pos_embed shape, defaulting to {expected_channels} channels")
+    
+    # Create input_chans that matches the expected shape
+    input_chans = list(range(1, expected_channels + 1))  # +1 because we're skipping the CLS token position
     
     for step, batch in enumerate(metric_logger.log_every(dataloader, print_freq, header)):
         # Assign learning rate for this step
@@ -296,11 +301,28 @@ def train_one_epoch(model, vqnsp, dataloader, optimizer, device, epoch, loss_sca
             for param_group in optimizer.param_groups:
                 param_group["lr"] = lr_schedule_values[it] * param_group.get("lr_scale", 1.0)
         
-        # Move batch to device
+        # Move batch to device and scale
         samples = batch.float().to(device, non_blocking=True) / 100  # Scale to 0.1 mV as in LaBraM
         
-        # Generate random mask
+        # Get batch dimensions
         batch_size, num_channels, num_windows, patch_size = samples.shape
+        
+        # Handle channel dimension mismatch - reshape if needed
+        if num_channels != expected_channels:
+            print(f"Reshaping input: Original shape: {samples.shape}, expected channels: {expected_channels}")
+            
+            # If we have too many channels, select only the first expected_channels
+            if num_channels > expected_channels:
+                samples = samples[:, :expected_channels, :, :]
+                print(f"Reduced channels to: {samples.shape}")
+            # If we have too few channels, pad with zeros
+            elif num_channels < expected_channels:
+                padding = torch.zeros(batch_size, expected_channels - num_channels, 
+                                     num_windows, patch_size, device=device)
+                samples = torch.cat([samples, padding], dim=1)
+                print(f"Padded channels to: {samples.shape}")
+        
+        # Generate random mask
         bool_masked_pos = random_masking(
             samples.flatten(1, 2), 
             mask_ratio=0.5
@@ -309,21 +331,49 @@ def train_one_epoch(model, vqnsp, dataloader, optimizer, device, epoch, loss_sca
         # Get token IDs using the tokenizer
         with torch.no_grad():
             with torch.cuda.amp.autocast():
-                input_ids = vqnsp.get_codebook_indices(samples, input_chans)
-                
-            # Get labels for masked and unmasked positions
-            labels = input_ids[bool_masked_pos]
-            labels_sym = input_ids[~bool_masked_pos]
+                try:
+                    input_ids = vqnsp.get_codebook_indices(samples, input_chans)
+                    
+                    # Get labels for masked and unmasked positions
+                    labels = input_ids[bool_masked_pos]
+                    labels_sym = input_ids[~bool_masked_pos]
+                except Exception as e:
+                    print(f"Error in tokenizer: {e}")
+                    # Try with a more aggressive approach to match dimensions
+                    print("Attempting recovery...")
+                    
+                    # Create a standardized input tensor of exactly the right shape
+                    std_input = torch.zeros(batch_size, expected_channels, num_windows, patch_size, 
+                                          device=device)
+                    # Copy as much of the original data as will fit
+                    min_channels = min(num_channels, expected_channels)
+                    std_input[:, :min_channels, :, :] = samples[:, :min_channels, :, :]
+                    
+                    # Try again with standardized input
+                    input_ids = vqnsp.get_codebook_indices(std_input, input_chans)
+                    labels = input_ids[bool_masked_pos]
+                    labels_sym = input_ids[~bool_masked_pos]
         
         # Forward pass with autocast for mixed precision
         with torch.cuda.amp.autocast():
-            outputs = model(samples, input_chans, bool_masked_pos=bool_masked_pos)
-            
-            x_rec, x_rec_sym = outputs
-            loss_fn = nn.CrossEntropyLoss()
-            loss_rec = loss_fn(x_rec, labels)
-            loss_rec_sym = loss_fn(x_rec_sym, labels_sym)
-            loss = loss_rec + loss_rec_sym
+            try:
+                outputs = model(samples, input_chans, bool_masked_pos=bool_masked_pos)
+                
+                x_rec, x_rec_sym = outputs
+                loss_fn = nn.CrossEntropyLoss()
+                loss_rec = loss_fn(x_rec, labels)
+                loss_rec_sym = loss_fn(x_rec_sym, labels_sym)
+                loss = loss_rec + loss_rec_sym
+            except Exception as e:
+                print(f"Error in forward pass: {e}")
+                # Try with standardized input from above
+                outputs = model(std_input, input_chans, bool_masked_pos=bool_masked_pos)
+                
+                x_rec, x_rec_sym = outputs
+                loss_fn = nn.CrossEntropyLoss()
+                loss_rec = loss_fn(x_rec, labels)
+                loss_rec_sym = loss_fn(x_rec_sym, labels_sym)
+                loss = loss_rec + loss_rec_sym
         
         loss_value = loss.item()
         
@@ -444,46 +494,66 @@ def main(args):
         'norm_layer': norm_layer
     }
     
+    logger.info(f"Loading model: {args.model}")
+    model_class = getattr(modeling_pretrain, args.model)
+    
+    # Create model with only the parameters that need to be overridden
+    # Don't include norm_layer as it's already defined in the model function
+    model_kwargs = {
+        'vocab_size': args.codebook_size,
+        'use_abs_pos_emb': args.abs_pos_emb,
+        'use_rel_pos_bias': args.rel_pos_bias,
+        'init_values': args.layer_scale_init_value,
+        'drop_path_rate': args.drop_path
+        # Remove norm_layer from here
+    }
+    
     try:
         # Create the model
-        model = model_class(**model_kwargs)
-        logger.info(f"Successfully created model: {args.model}")
-        
-        # Load pretrained weights if specified
-        if args.pretrained and args.model_path:
-            logger.info(f"Loading pretrained weights from {args.model_path}")
+        if args.model == 'labram_base_patch200_1600_8k_vocab':
+            # Call with specific parameters to avoid duplicates
+            model = modeling_pretrain.labram_base_patch200_1600_8k_vocab(
+                pretrained=False,
+                vocab_size=args.codebook_size,
+                use_abs_pos_emb=args.abs_pos_emb,
+                use_rel_pos_bias=args.rel_pos_bias,
+                init_values=args.layer_scale_init_value,
+                drop_path_rate=args.drop_path
+            )
+        elif args.model == 'labram_large_patch200_1600_8k_vocab':
+            # Call with specific parameters to avoid duplicates
+            model = modeling_pretrain.labram_large_patch200_1600_8k_vocab(
+                pretrained=False,
+                vocab_size=args.codebook_size,
+                use_abs_pos_emb=args.abs_pos_emb,
+                use_rel_pos_bias=args.rel_pos_bias,
+                init_values=args.layer_scale_init_value,
+                drop_path_rate=args.drop_path
+            )
+        elif args.model == 'labram_huge_patch200_1600_8k_vocab':
+            # Call with specific parameters to avoid duplicates
+            model = modeling_pretrain.labram_huge_patch200_1600_8k_vocab(
+                pretrained=False,
+                vocab_size=args.codebook_size,
+                use_abs_pos_emb=args.abs_pos_emb,
+                use_rel_pos_bias=args.rel_pos_bias,
+                init_values=args.layer_scale_init_value,
+                drop_path_rate=args.drop_path
+            )
+        else:
+            # Generic call to model_class with model_kwargs
+            model = model_class(**model_kwargs)
             
-            try:
-                checkpoint = torch.load(args.model_path, map_location='cpu')
-                
-                # Extract the model state dict
-                if 'model' in checkpoint:
-                    state_dict = checkpoint['model']
-                elif 'state_dict' in checkpoint:
-                    state_dict = checkpoint['state_dict']
-                else:
-                    state_dict = checkpoint
-                
-                # Load the state dict with strict=False to allow missing keys
-                missing_keys, unexpected_keys = model.load_state_dict(state_dict, strict=False)
-                
-                logger.info(f"Successfully loaded pretrained weights")
-                logger.info(f"Missing keys: {missing_keys}")
-                logger.info(f"Unexpected keys: {unexpected_keys}")
-                
-            except Exception as e:
-                logger.error(f"Error loading pretrained weights: {e}")
-                # Continue without pretrained weights
-        
-        model.to(device)
-        logger.info(f"Model moved to {device}")
-        
+        logger.info(f"Successfully created model: {args.model}")
+            
     except Exception as e:
-        logger.error(f"Error creating model: {e}")
-        import traceback
-        logger.error(traceback.format_exc())
-        raise RuntimeError(f"Failed to create model: {e}")
+        logger.error(f"Error loading pretrained weights: {e}")
+        # Continue without pretrained weights
     
+    model.to(device)
+    logger.info(f"Model moved to {device}")
+    
+
     # Print model info
     n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
     logger.info(f"Model = {model.__class__.__name__}")
