@@ -494,9 +494,9 @@ def save_label_functions(output_dir):
 
 if __name__ == "__main__":
     # Define paths
-    eeg_folder_path = "/Users/maltelau/Desktop/LaBraM-MMDTU/LaBraM-MMDTU/DTUDATA/FG_Data/PreprocessedEEGData"
-    overview_path = "/Users/maltelau/Desktop/LaBraM-MMDTU/LaBraM-MMDTU/DTUDATA/FG_Data/FG_overview_df_v2.pkl"
-    behavior_path = "/Users/maltelau/Desktop/LaBraM-MMDTU/LaBraM-MMDTU/DTUDATA/FG_Data/Beh_feat_df_v2.pkl"
+    eeg_folder_path = os.path.abspath('./FG_Data/PreprocessedEEGData')
+    overview_path = os.path.abspath('./FG_Data/FG_overview_df_v2.pkl')
+    behavior_path = "./FG_Data/Beh_feat_df_v2.pkl"
     
     output_dir = Path("./DataProcessed")
     output_dir.mkdir(parents=True, exist_ok=True)
