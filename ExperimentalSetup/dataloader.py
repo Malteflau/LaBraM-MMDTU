@@ -47,7 +47,6 @@ class SocialEEGDataset(Dataset):
             target_key: Column name in metadata_df for the target variable
             resample_to_hz: Target sampling rate in Hz 
             patch_size: Number of time samples per patch
-            normalize: Whether to normalize data (divide by 100 as in LaBraM paper)
             return_all_patches: Whether to return all patches per epoch (True) or a single 
                               random patch (False)
         """
@@ -253,7 +252,7 @@ def create_dataloaders(
     h5_path: str,
     mapping_name: str = None,
     batch_size: int = 64,
-    num_workers: int = 4,
+    num_workers: int = 0,
     resample_to_hz: int = 200,
     patch_size: int = 200,
     all_patches: bool = True,

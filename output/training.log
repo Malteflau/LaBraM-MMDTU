@@ -1,0 +1,8 @@
+2025-02-26 14:48:52,167 - __main__ - INFO - Starting LaBraM fine-tuning
+2025-02-26 14:48:52,167 - __main__ - INFO - Arguments: Namespace(metadata='DataProcessed/metadata.pkl', h5='DataProcessed/eeg_data.h5', mapping='feedback_prediction', output_dir='./output', model_path='/zhome/ce/8/186807/Desktop/Labram/LaBraM-MMDTU/checkpoints/labram-base.pth', model_name='labram_base_patch200_200', num_classes=2, batch_size=64, num_workers=4, resample_hz=200, patch_size=200, all_patches=True, max_patches=None, test_ratio=0.2, num_epochs=50, lr=0.0001, weight_decay=0.01, momentum=0.9, optimizer='adamw', scheduler='cosine', step_size=10, gamma=0.1, patience=10, seed=42, device='cuda')
+2025-02-26 14:48:52,260 - __main__ - INFO - Using device: cuda
+2025-02-26 14:48:52,260 - __main__ - INFO - Creating data loaders...
+2025-02-27 11:46:44,961 - __main__ - INFO - Starting LaBraM fine-tuning
+2025-02-27 11:46:44,961 - __main__ - INFO - Arguments: Namespace(metadata='DataProcessed/metadata.pkl', h5='DataProcessed/eeg_data.h5', mapping='feedback_prediction', output_dir='./output', model_path='/zhome/ce/8/186807/Desktop/Labram/LaBraM-MMDTU/checkpoints/labram-base.pth', model_name='labram_base_patch200_200', num_classes=2, batch_size=64, num_workers=4, resample_hz=200, patch_size=200, all_patches=True, max_patches=None, test_ratio=0.2, num_epochs=50, lr=0.0001, weight_decay=0.01, momentum=0.9, optimizer='adamw', scheduler='cosine', step_size=10, gamma=0.1, patience=10, seed=42, device='cuda')
+2025-02-27 11:46:44,991 - __main__ - INFO - Using device: cuda
+2025-02-27 11:46:44,991 - __main__ - INFO - Creating data loaders...
