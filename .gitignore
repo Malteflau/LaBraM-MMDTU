@@ -2,4 +2,5 @@ DTUDATA/
 DataProcessed/
 ExperimentalSetup/create_condition_mappings.py
 ExperimentalSetup/__pycache__/dataloader.cpython-311.pyc
-.gitignore
+LaBraM_data/
+processed/
