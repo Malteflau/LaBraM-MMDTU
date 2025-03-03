@@ -61,7 +61,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
                 if wd_schedule_values is not None and param_group["weight_decay"] > 0:
                     param_group["weight_decay"] = wd_schedule_values[it]
 
-        samples = samples.float().to(device, non_blocking=True) / 100
+        samples = samples.float().to(device, non_blocking=True)
         samples = rearrange(samples, 'B N (A T) -> B N A T', T=200)
         
         targets = targets.to(device, non_blocking=True)
@@ -102,6 +102,16 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
             grad_norm = loss_scaler(loss, optimizer, clip_grad=max_norm,
                                     parameters=model.parameters(), create_graph=is_second_order,
                                     update_grad=(data_iter_step + 1) % update_freq == 0)
+                        # Add after: loss_scaler(loss, optimizer, clip_grad=max_norm, parameters=model.parameters(), ...)
+            # Debug gradients
+            if step % 50 == 0:  # Check every 50 steps to avoid log clutter
+                for name, param in model.named_parameters():
+                    if 'head' in name or 'fc_norm' in name:
+                        if param.grad is not None:
+                            grad_norm = param.grad.norm().item()
+                            print(f"Step {step}, {name} grad norm: {grad_norm:.8f}")
+                        else:
+                            print(f"Step {step}, {name} has no gradient")
             if (data_iter_step + 1) % update_freq == 0:
                 optimizer.zero_grad()
                 if model_ema is not None:

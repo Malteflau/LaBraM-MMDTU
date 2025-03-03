@@ -68,7 +68,7 @@ def get_args():
     parser.add_argument('--drop_path', type=float, default=0.1, metavar='PCT',
                         help='Drop path rate (default: 0.1)')
 
-    parser.add_argument('--disable_eval_during_finetuning', action='store_true', default=False)
+    parser.add_argument('--disable_eval_during_finetuning', action='store_true', default=True)
 
     parser.add_argument('--model_ema', action='store_true', default=False)
     parser.add_argument('--model_ema_decay', type=float, default=0.9999, help='')
@@ -228,7 +228,7 @@ def get_dataset(args):
         metrics = ["accuracy", "balanced_accuracy", "cohen_kappa", "f1_weighted"]
         
     elif args.dataset == 'DTU':
-        train_dataset, test_dataset, val_dataset = utils.prepare_DTU_dataset("/Users/maltelau/Desktop/LaBraM-MMDTU/LaBraM-MMDTU/DTUDATA/FG_Data/LaBraM_data")
+        train_dataset, test_dataset, val_dataset = utils.prepare_DTU_data("/work3/s224183/LaBraM_data")
         # Channel names for DTU dataset
         channel_mapping = {
             'Fp1': 'EEG FP1-REF', 'AF7': 'EEG AF7-REF', 'AF3': 'EEG AF3-REF', 'F1': 'EEG F1-REF',
@@ -248,7 +248,7 @@ def get_dataset(args):
             'P2': 'EEG P2-REF', 'P4': 'EEG P4-REF', 'P6': 'EEG P6-REF', 'P8': 'EEG P8-REF',
             'P10': 'EEG P10-REF', 'PO8': 'EEG PO8-REF', 'PO4': 'EEG PO4-REF', 'O2': 'EEG O2-REF'
         }
-        ch_names = [channel_mapping[ch] for ch in list(channel_mapping.keys())]
+        ch_names = [name.upper() for name in channel_mapping.keys()]
         args.nb_classes = 1  # Binary classification for friend status
         metrics = ["pr_auc", "roc_auc", "accuracy", "balanced_accuracy"]
 

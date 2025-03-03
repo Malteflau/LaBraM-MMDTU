@@ -809,66 +809,62 @@ Malte and Magnus' code goes here
 """""
 class DTULoader(torch.utils.data.Dataset):
     def __init__(self, root, files, sampling_rate=200):
-        """
-        DTU Force Game dataset loader.
-        
-        Args:
-            root: Directory containing processed files
-            files: List of filenames to load
-            sampling_rate: Target sampling rate (default=200Hz)
-        """
         self.root = root
         self.files = files
-        self.default_rate = 500  # Original sampling rate is 500Hz
+        self.default_rate = 200
         self.sampling_rate = sampling_rate
-
+        
     def __len__(self):
         return len(self.files)
 
     def __getitem__(self, index):
         sample = pickle.load(open(os.path.join(self.root, self.files[index]), "rb"))
         X = sample["X"]
+        y = sample["y"]
         
-        # Resample if needed (from 500Hz to target rate)
-        if self.sampling_rate != self.default_rate:
-            X = resample(X, int(X.shape[-1] * self.sampling_rate / self.default_rate), axis=-1)
+        # If X has shape [channels, patches, time_per_patch]
+        if X.ndim == 3:
+            channels, patches, time_per_patch = X.shape
+            # Reshape to [channels, total_time_points]
+            X = X.reshape(channels, patches * time_per_patch)
+            
+        # Convert to tensor - ensure we have shape [channels, time_points]
+        X_tensor = torch.FloatTensor(X)
         
-        # Get label (default is friend status, but can be customized)
-        Y = sample["y"]
-        
-        # Convert to FloatTensor
-        X = torch.FloatTensor(X)
-        return X, Y
+        # Create target tensor with correct shape - scalar instead of extra dimensions
+
+        y_tensor = torch.FloatTensor([y]).squeeze() # This makes it [1] instead of [1,1]
+
+        return X_tensor, y_tensor
 
 
-def prepare_DTU_dataset(root):
-    """
-    Prepare DTU Force Game dataset for training, validation, and testing.
-    
-    Args:
-        root: Path to the DTU dataset directory with train/val/test folders
-        
-    Returns:
-        Tuple of (train_dataset, test_dataset, val_dataset)
-    """
-    # Set random seed for reproducibility
-    seed = 42
+def prepare_DTU_data(root):
+    # set random seed
+    seed = 12345
     np.random.seed(seed)
 
-    # Get file lists for each split
+    # Get all files in each directory
     train_files = os.listdir(os.path.join(root, "train"))
     val_files = os.listdir(os.path.join(root, "val"))
     test_files = os.listdir(os.path.join(root, "test"))
 
-    print(f"DTU Dataset:")
-    print(f"Train: {len(train_files)} files")
-    print(f"Val: {len(val_files)} files")
-    print(f"Test: {len(test_files)} files")
-
-    # Create datasets
+    # Create dataset loaders
     train_dataset = DTULoader(os.path.join(root, "train"), train_files)
     test_dataset = DTULoader(os.path.join(root, "test"), test_files)
     val_dataset = DTULoader(os.path.join(root, "val"), val_files)
+    
+    # Debug statistics (THIS IS WHERE THE ERROR IS)
+    labels = []
+    for i in range(min(100, len(train_dataset))):
+        X, y = train_dataset[i]
+        # FIX: Check if y is already an int or a tensor
+        if hasattr(y, 'item'):
+            labels.append(y.item())
+        else:
+            labels.append(y)  # Already an int, no need to call .item()
+    
+    print(f"Label distribution in sample: {np.bincount(labels)}")
+    print(f"First 10 labels: {labels[:10]}")
     
     return train_dataset, test_dataset, val_dataset
 
