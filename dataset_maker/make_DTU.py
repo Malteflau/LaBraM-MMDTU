@@ -36,13 +36,53 @@ channel_mapping = {
     'P10': 'EEG P10-REF', 'PO8': 'EEG PO8-REF', 'PO4': 'EEG PO4-REF', 'O2': 'EEG O2-REF'
 }
 
-def process_file(fif_file, participant_data, output_dir):
+def get_behavioral_data(behavior_path, triad_id, participant_num, condition):
     """
-    Process a single EEG file and create samples.
+    Get behavioral data for a specific trial if available.
+    
+    Args:
+        behavior_path: Path to behavior data file
+        triad_id: ID of the triad
+        participant_num: Participant number (P1, P2, P3)
+        condition: Condition name
+    
+    Returns:
+        dict: Dictionary of behavioral features or None if not found
+    """
+    try:
+        with open(behavior_path, "rb") as f:
+            behavior_df = pickle.load(f)
+        
+        # Find matching behavioral data
+        beh_match = behavior_df[
+            (behavior_df['Triad_id'] == triad_id) & 
+            (behavior_df['Participant'] == participant_num) &
+            (behavior_df['Condition'] == condition)
+        ]
+        
+        if beh_match.empty:
+            return None
+        
+        # Extract behavioral features
+        beh_features = {}
+        for feature in ['Latency', 'Stability', 'Success', 'RelativeForce', 'cVariability']:
+            feature_rows = beh_match[beh_match['Feature'] == feature]
+            if not feature_rows.empty:
+                beh_features[feature.lower()] = feature_rows['Value'].values[0]
+        
+        return beh_features
+    except Exception as e:
+        print(f"Error getting behavioral data: {e}")
+        return None
+
+def process_file(fif_file, participant_data, behavior_path, output_dir):
+    """
+    Process a single EEG file and create samples that are compatible with LaBraM.
     
     Args:
         fif_file: Path to the EEG file
-        participant_data: List of dictionaries with participant metadata
+        participant_data: DataFrame with participant metadata
+        behavior_path: Path to behavioral data file
         output_dir: Directory to save processed data
     
     Returns:
@@ -51,23 +91,29 @@ def process_file(fif_file, participant_data, output_dir):
     try:
         # Extract participant ID from filename
         participant_id = os.path.basename(fif_file).split('_')[0]
+        
+        if len(participant_id) < 4 or not participant_id[-1].isalpha():
+            print(f"Warning: Invalid participant ID format for {participant_id}")
+            return 0
+            
         triad_id = int(participant_id[:3])
         participant_position = participant_id[-1]  # A, B, or C
         
         # Map participant position to P1, P2, P3
         position_map = {'A': 'P1', 'B': 'P2', 'C': 'P3'}
-        participant_num = position_map.get(participant_position, 'P1')
+        if participant_position not in position_map:
+            print(f"Warning: Unknown participant position {participant_position} for {participant_id}")
+            return 0
+            
+        participant_num = position_map[participant_position]
         
         # Get metadata from participant_data if available
-        subject_info = None
-        for row in participant_data:
-            if row['Exp_id'] == participant_id:
-                subject_info = row
-                break
-        
-        if subject_info is None:
+        participant_rows = participant_data[participant_data['Exp_id'] == participant_id]
+        if participant_rows.empty:
             print(f"Warning: No metadata found for {participant_id}")
             return 0
+            
+        subject_info = participant_rows.iloc[0].to_dict()
         
         # Load epochs - this is memory intensive
         print(f"Processing {fif_file}")
@@ -85,43 +131,101 @@ def process_file(fif_file, participant_data, output_dir):
             # Extract parameters from condition
             has_feedback = 'Pn' not in condition
             
+            # Get timing information from epochs
+            sfreq = epochs.info['sfreq']  # Sampling frequency (should be 500 Hz)
+            times = epochs.times  # Time points array
+            
             # Get the trial data for this epoch
-            eeg_data = epochs[epoch_idx].get_data()[0]
+            eeg_data = epochs[epoch_idx].get_data()[0]  # Shape: [channels, time_points]
             
-            # Normalize data to 0.1mV scale for LaBraM
+            # Find indices corresponding to t=0s and t=4s
+            # Find indices corresponding to t=0s and t=4s
+            t0_idx = np.where(times >= 0)[0][0]  # First index where time >= 0
+            t4_idx = np.where(times <= 4)[0][-1]  # Last index where time <= 4
+
+            # Calculate exactly how many points we should have after resampling
+            orig_fs = sfreq  # Original frequency (should be 500 Hz)
+            target_fs = 200  # Target frequency for LaBraM
+            time_duration = 4.0  # Exactly 4 seconds
+
+            # Extract only the time window from t=0s to t=4s
+            eeg_data = eeg_data[:, t0_idx:t4_idx+1]  # +1 to include the t4_idx
+
+            # For more accurate control, let's compute exact indices after resampling
+            desired_samples = int(time_duration * target_fs)  # Should be 800
+            current_samples = eeg_data.shape[1]
+
+            # Resample more precisely to get exactly 800 samples
+            resampled_data = np.zeros((eeg_data.shape[0], desired_samples))
+            for ch_idx in range(eeg_data.shape[0]):
+                # Use linear interpolation to get exactly 800 samples
+                x_orig = np.linspace(0, time_duration, current_samples)
+                x_new = np.linspace(0, time_duration, desired_samples)
+                resampled_data[ch_idx] = np.interp(x_new, x_orig, eeg_data[ch_idx])
+
+            # Replace our data with the precisely resampled data
+            eeg_data = resampled_data
+
+            # Normalize data to μV scale for LaBraM
             eeg_data = eeg_data * 10000
+
+            # Now we should have exactly 800 time points
+            time_points = eeg_data.shape[1]
             
-            # Determine if this condition involves this participant
-            participant_involved = True
-            if condition.startswith('T1') and participant_num not in ['P1']:
-                participant_involved = False
-            elif condition.startswith('T3') and participant_num not in ['P3']:
-                participant_involved = False
-            elif condition.startswith('T12') and participant_num not in ['P1', 'P2']:
-                participant_involved = False
-            elif condition.startswith('T13') and participant_num not in ['P1', 'P3']:
-                participant_involved = False
-            elif condition.startswith('T23') and participant_num not in ['P2', 'P3']:
-                participant_involved = False
+            # Calculate how many complete patches we can fit
+            num_patches = time_points // 200
             
-            # Create sample dictionary
+            # Make sure we have at least one patch
+            if num_patches == 0:
+                print(f"Warning: Epoch {epoch_idx} too short after resampling - skipping")
+                continue
+            
+            # Truncate to the nearest multiple of 200
+            new_length = num_patches * 200
+            eeg_data = eeg_data[:, :new_length]
+            
+            # Reshape the data to match LaBraM's expectations
+            # Shape should be [channels, num_patches, patch_size]
+            eeg_data_reshaped = eeg_data.reshape(eeg_data.shape[0], num_patches, 200)
+            
+            # Parse condition to determine trial type and participants involved
+            condition_type, has_feedback_check = parse_condition(condition)
+            
+            # Double-check has_feedback from parse_condition matches our direct check
+            if has_feedback != has_feedback_check:
+                print(f"Warning: Feedback status mismatch for {condition}")
+            
+            # Determine if this participant is involved in this condition
+            participant_involved = is_participant_involved(condition_type, participant_num)
+            
+            # Get behavioral data if available
+            beh_features = get_behavioral_data(behavior_path, triad_id, participant_num, condition)
+            
+            # Create sample dictionary - using has_feedback as the primary classification target (y)
             sample = {
-                'X': eeg_data,
-                'y': 1 if subject_info['Friend_status'] == 'Yes' else 0,
+                'X': eeg_data_reshaped,  # Now shaped as [channels, num_patches, patch_size]
+                'y': int(has_feedback),  # Binary classification: 1 for feedback, 0 for no feedback
                 'participant_id': participant_id,
                 'triad_id': triad_id,
                 'epoch_idx': epoch_idx,
                 'condition': condition,
+                'condition_type': condition_type,
                 'has_feedback': has_feedback,
+                'participant_position': participant_position,
                 'participant_num': participant_num,
                 'participant_involved': participant_involved,
-                'subject_id': subject_info['Subject_id'],
-                'friend_status': subject_info['Friend_status'],
-                'age': subject_info['Age'],
-                'gender': subject_info['Gender'],
-                'class_friends': subject_info['Class_friends'],
-                'class_close_friends': subject_info['Class_close_friends']
+                'subject_id': subject_info.get('Subject_id'),
+                'friend_status': subject_info.get('Friend_status'),
+                'age': subject_info.get('Age'),
+                'gender': subject_info.get('Gender'),
+                'class_friends': subject_info.get('Class_friends'),
+                'class_close_friends': subject_info.get('Class_close_friends')
             }
+            
+            # Add behavioral features if available
+            if beh_features:
+                for key, value in beh_features.items():
+                    sample[f'beh_{key}'] = value
             
             # Save the sample to disk immediately to reduce memory usage
             output_file = os.path.join(output_dir, f"{participant_id}_{epoch_idx}_{condition}.pkl")
@@ -141,9 +245,39 @@ def process_file(fif_file, participant_data, output_dir):
         print(f"Error processing {fif_file}: {e}")
         return 0
 
+def is_participant_involved(condition_type, participant_num):
+    """
+    Determine if a participant is involved in a specific condition.
+    
+    Args:
+        condition_type: Type of condition (solo_p1, duo_p1p2, etc.)
+        participant_num: Participant number (P1, P2, P3)
+    
+    Returns:
+        bool: True if participant is involved, False otherwise
+    """
+    if condition_type == 'solo_p1' and participant_num == 'P1':
+        return True
+    elif condition_type == 'solo_p3' and participant_num == 'P3':
+        return True
+    elif condition_type == 'duo_p1p2' and participant_num in ['P1', 'P2']:
+        return True
+    elif condition_type == 'duo_p1p3' and participant_num in ['P1', 'P3']:
+        return True
+    elif condition_type == 'duo_p2p3' and participant_num in ['P2', 'P3']:
+        return True
+    return False
 
 def parse_condition(condition):
-    """Parse condition code to determine trial type"""
+    """
+    Parse condition code to determine trial type and feedback status.
+    
+    Args:
+        condition: Condition string from the EEG file
+    
+    Returns:
+        tuple: (condition_type, has_feedback)
+    """
     # Whether this has continuous feedback
     has_feedback = 'Pn' not in condition
     
@@ -160,7 +294,6 @@ def parse_condition(condition):
         return 'duo_p2p3', has_feedback
     else:
         return 'unknown', has_feedback
-    
 
 def split_data_by_participant(processed_dir, output_dir):
     """
@@ -181,7 +314,6 @@ def split_data_by_participant(processed_dir, output_dir):
     
     # Get all pickle files
     all_files = [f for f in os.listdir(processed_dir) if f.endswith('.pkl')]
-    
     # Extract unique participant IDs
     participant_ids = set()
     for file in all_files:
@@ -241,15 +373,53 @@ def split_data_by_participant(processed_dir, output_dir):
                 with open(dst_path, "wb") as f_dst:
                     pickle.dump(data, f_dst)
             
-            # Delete source file after successful copy to save disk space
-            os.remove(src_path)
+            # # Delete source file after successful copy to save disk space
+            # os.remove(src_path)
     
     # Print summary
     print(f"Split data into:")
     print(f"  Train: {train_count} samples from {len(train_participants)} participants")
     print(f"  Validation: {val_count} samples from {len(val_participants)} participants")
     print(f"  Test: {test_count} samples from {len(test_participants)} participants")
+    
+    # Generate class distribution statistics
+    train_statistics = get_class_distribution(train_dir)
+    val_statistics = get_class_distribution(val_dir)
+    test_statistics = get_class_distribution(test_dir)
+    
+    print("\nClass distribution (feedback vs. no feedback):")
+    print(f"  Train: {train_statistics}")
+    print(f"  Validation: {val_statistics}")
+    print(f"  Test: {test_statistics}")
 
+def get_class_distribution(directory):
+    """
+    Calculate class distribution in a directory.
+    
+    Args:
+        directory: Directory containing data files
+    
+    Returns:
+        dict: Class distribution
+    """
+    class_counts = {0: 0, 1: 0}
+    
+    for file in os.listdir(directory):
+        if file.endswith('.pkl'):
+            try:
+                with open(os.path.join(directory, file), 'rb') as f:
+                    data = pickle.load(f)
+                    y_value = data.get('y', None)
+                    if y_value is not None and y_value in class_counts:
+                        class_counts[y_value] += 1
+            except Exception as e:
+                print(f"Error reading {file}: {e}")
+    
+    total = sum(class_counts.values())
+    if total > 0:
+        percentages = {k: f"{v} ({v/total:.1%})" for k, v in class_counts.items()}
+        return percentages
+    return class_counts
 
 if __name__ == "__main__":
     # Determine the script's directory
@@ -262,34 +432,36 @@ if __name__ == "__main__":
     data_dir = os.path.join(root_dir, "DTUDATA", "FG_Data")
     
     # Specific paths
-    eeg_folder_path = os.path.join(data_dir, "PreprocessedEEGData")
+    eeg_folder_path = "/work3/s224183/PreprocessedEEGData/"
     overview_path = os.path.join(data_dir, "FG_overview_df_v2.pkl")
+    behavior_path = os.path.join(data_dir, "Beh_feat_df_v2.pkl")
     
     # Output paths
-    processed_dir = os.path.join(data_dir, "processed")
-    output_dir = os.path.join(data_dir, "LaBraM_data")
+    processed_dir = "/work3/s224183/processed"
+    output_dir = "/work3/s224183/LaBraM_data"
     
     # Create output directories
     os.makedirs(processed_dir, exist_ok=True)
     os.makedirs(output_dir, exist_ok=True)
     
     # Load overview data
-    with open(overview_path, "rb") as f:
-        overview_df = pickle.load(f)
-    
-    # Convert DataFrame to list of dictionaries for easier processing
-    participant_data = overview_df.to_dict('records')
+    try:
+        with open(overview_path, "rb") as f:
+            overview_df = pickle.load(f)
+        print(f"Loaded overview data with {len(overview_df)} rows")
+    except Exception as e:
+        print(f"Error loading overview data: {e}")
+        overview_df = pd.DataFrame()
     
     # Get list of all fif files
     fif_files = [os.path.join(eeg_folder_path, f) for f in os.listdir(eeg_folder_path) 
                 if f.endswith('.fif') and 'preprocessed' in f]
-    
-    fif_files= fif_files[:3]  # For testing
     # Process files one by one to reduce memory usage
+    fif_files = fif_files[0:5]
     total_epochs = 0
     for i, fif_file in enumerate(fif_files):
         print(f"Processing file {i+1}/{len(fif_files)}: {os.path.basename(fif_file)}")
-        epochs_processed = process_file(fif_file, participant_data, processed_dir)
+        epochs_processed = process_file(fif_file, overview_df, behavior_path, processed_dir)
         total_epochs += epochs_processed
         
         # Force garbage collection after each file
@@ -298,6 +470,7 @@ if __name__ == "__main__":
     print(f"Total epochs processed: {total_epochs}")
     
     # Split data into train/val/test by participant
-    split_data_by_participant(processed_dir, output_dir)
+    if total_epochs > 0:
+        split_data_by_participant(processed_dir, output_dir)
     
     print("DTU data processing complete!")
