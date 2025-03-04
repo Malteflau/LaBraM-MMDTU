@@ -807,6 +807,7 @@ def prepare_TUAB_dataset(root):
 Malte and Magnus' code goes here
 
 """""
+
 class DTULoader(torch.utils.data.Dataset):
     def __init__(self, root, files, sampling_rate=200):
         self.root = root
@@ -820,9 +821,21 @@ class DTULoader(torch.utils.data.Dataset):
     def __getitem__(self, index):
         sample = pickle.load(open(os.path.join(self.root, self.files[index]), "rb"))
         X = sample["X"]
-        y = sample["y"]
         
-        # If X has shape [channels, patches, time_per_patch]
+        ######Has feedback
+        #y = sample["y"]
+
+        ######Friendship status
+        #y = 1 if sample["friend_status"] == "Yes" else 0
+
+        ######class close friends
+        #y = 1 if sample["class_friends"] >= 15 else 0 
+        
+        # ######age above 22
+        y = 1 if sample["age"] > 22 else 0
+ 
+
+       ## If X has shape [channels, patches, time_per_patch]
         if X.ndim == 3:
             channels, patches, time_per_patch = X.shape
             # Reshape to [channels, total_time_points]
@@ -836,7 +849,7 @@ class DTULoader(torch.utils.data.Dataset):
         y_tensor = torch.FloatTensor([y]).squeeze() # This makes it [1] instead of [1,1]
 
         return X_tensor, y_tensor
-
+    
 
 def prepare_DTU_data(root):
     # set random seed
@@ -852,19 +865,6 @@ def prepare_DTU_data(root):
     train_dataset = DTULoader(os.path.join(root, "train"), train_files)
     test_dataset = DTULoader(os.path.join(root, "test"), test_files)
     val_dataset = DTULoader(os.path.join(root, "val"), val_files)
-    
-    # Debug statistics (THIS IS WHERE THE ERROR IS)
-    labels = []
-    for i in range(min(100, len(train_dataset))):
-        X, y = train_dataset[i]
-        # FIX: Check if y is already an int or a tensor
-        if hasattr(y, 'item'):
-            labels.append(y.item())
-        else:
-            labels.append(y)  # Already an int, no need to call .item()
-    
-    print(f"Label distribution in sample: {np.bincount(labels)}")
-    print(f"First 10 labels: {labels[:10]}")
     
     return train_dataset, test_dataset, val_dataset
 

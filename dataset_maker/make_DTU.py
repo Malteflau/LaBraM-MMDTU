@@ -457,7 +457,6 @@ if __name__ == "__main__":
     fif_files = [os.path.join(eeg_folder_path, f) for f in os.listdir(eeg_folder_path) 
                 if f.endswith('.fif') and 'preprocessed' in f]
     # Process files one by one to reduce memory usage
-    fif_files = fif_files[0:5]
     total_epochs = 0
     for i, fif_file in enumerate(fif_files):
         print(f"Processing file {i+1}/{len(fif_files)}: {os.path.basename(fif_file)}")
