@@ -34,10 +34,11 @@ import pickle
 from scipy.signal import resample
 from pyhealth.metrics import binary_metrics_fn, multiclass_metrics_fn
 import pandas as pd
-from sklearn.metrics import r2_score
-from sklearn.metrics import mean_squared_error
+
 from scipy.stats import pearsonr
 
+from sklearn.metrics import r2_score, mean_squared_error
+from scipy.stats import pearsonr
 
 standard_1020 = [
     'FP1', 'FPZ', 'FP2', 
@@ -823,7 +824,7 @@ class DTULoader(torch.utils.data.Dataset):
         X = sample["X"]
         
         ######Has feedback
-        #y = sample["y"]
+        y = sample["y"]
 
         ######Friendship status
         #y = 1 if sample["friend_status"] == "Yes" else 0
@@ -832,8 +833,25 @@ class DTULoader(torch.utils.data.Dataset):
         #y = 1 if sample["class_friends"] >= 15 else 0 
         
         # ######age above 22
-        y = 1 if sample["age"] > 22 else 0
- 
+        #y = 1 if sample["age"] > 22 else 0
+
+        #sample["y"] = 1 if sample["age"] > 22 else 0
+        #y = sample["y"]
+
+        y = 1 if sample["gender"] == "M" else 0
+        # def split_solo_vs_group(condition_type,participant_num):
+        #     if condition_type in ('T1P', 'T1Pn'):
+        #         return True
+        #     elif condition_type in ('T12P', 'T12Pn') and participant_num == 'P3':
+        #         return True
+        #     elif condition_type in ('T13P', 'T13Pn') and participant_num == 'P2':
+        #         return True
+        #     elif condition_type in ('T23P', 'T23Pn') and participant_num == 'P1':
+        #         return True
+        #     else:
+        #         return False
+
+        #y = split_solo_vs_group(sample["condition"],sample["participant_num"])
 
        ## If X has shape [channels, patches, time_per_patch]
         if X.ndim == 3:
@@ -850,6 +868,18 @@ class DTULoader(torch.utils.data.Dataset):
 
         return X_tensor, y_tensor
     
+def linear_regression_loss(output, target):
+    """
+    Mean squared error loss for linear regression problems.
+    
+    Args:
+        output: Predictions from the model
+        target: Ground truth values
+    
+    Returns:
+        MSE loss
+    """
+    return torch.mean((output - target) ** 2)
 
 def prepare_DTU_data(root):
     # set random seed
@@ -865,6 +895,51 @@ def prepare_DTU_data(root):
     train_dataset = DTULoader(os.path.join(root, "train"), train_files)
     test_dataset = DTULoader(os.path.join(root, "test"), test_files)
     val_dataset = DTULoader(os.path.join(root, "val"), val_files)
+    
+    # Print class distribution statistics
+    print("Dataset class distribution:")
+    
+    # For training set
+    # train_labels = []
+    # for i in range(len(train_dataset)):
+    #     _, y = train_dataset[i]
+    #     if hasattr(y, 'item'):
+    #         train_labels.append(y.item())
+    #     else:
+    #         train_labels.append(int(y))
+    
+    # train_counts = np.bincount(train_labels)
+    # train_total = len(train_labels)
+    # print(f"Training set: Class 0: {train_counts[0]} ({train_counts[0]/train_total:.2%}), " 
+    #       f"Class 1: {train_counts[1]} ({train_counts[1]/train_total:.2%})")
+    
+    # # For validation set
+    # val_labels = []
+    # for i in range(len(val_dataset)):
+    #     _, y = val_dataset[i]
+    #     if hasattr(y, 'item'):
+    #         val_labels.append(y.item())
+    #     else:
+    #         val_labels.append(int(y))
+    
+    # val_counts = np.bincount(val_labels)
+    # val_total = len(val_labels)
+    # print(f"Validation set: Class 0: {val_counts[0]} ({val_counts[0]/val_total:.2%}), "
+    #       f"Class 1: {val_counts[1]} ({val_counts[1]/val_total:.2%})")
+    
+    # # For test set
+    # test_labels = []
+    # for i in range(len(test_dataset)):
+    #     _, y = test_dataset[i]
+    #     if hasattr(y, 'item'):
+    #         test_labels.append(y.item())
+    #     else:
+    #         test_labels.append(int(y))
+    
+    # test_counts = np.bincount(test_labels)
+    # test_total = len(test_labels)
+    # print(f"Test set: Class 0: {test_counts[0]} ({test_counts[0]/test_total:.2%}), "
+    #       f"Class 1: {test_counts[1]} ({test_counts[1]/test_total:.2%})")
     
     return train_dataset, test_dataset, val_dataset
 
@@ -894,3 +969,25 @@ def get_metrics(output, target, metrics, is_binary, threshold=0.5):
             target, output, metrics=metrics
         )
     return results
+
+def get_channel_names():
+    channel_mapping = {
+    'Fp1': 'EEG FP1-REF', 'AF7': 'EEG AF7-REF', 'AF3': 'EEG AF3-REF', 'F1': 'EEG F1-REF',
+    'F3': 'EEG F3-REF', 'F5': 'EEG F5-REF', 'F7': 'EEG F7-REF', 'FT7': 'EEG FT7-REF',
+    'FC5': 'EEG FC5-REF', 'FC3': 'EEG FC3-REF', 'FC1': 'EEG FC1-REF', 'C1': 'EEG C1-REF',
+    'C3': 'EEG C3-REF', 'C5': 'EEG C5-REF', 'T7': 'EEG T7-REF', 'TP7': 'EEG TP7-REF',
+    'CP5': 'EEG CP5-REF', 'CP3': 'EEG CP3-REF', 'CP1': 'EEG CP1-REF', 'P1': 'EEG P1-REF',
+    'P3': 'EEG P3-REF', 'P5': 'EEG P5-REF', 'P7': 'EEG P7-REF', 'P9': 'EEG P9-REF',
+    'PO7': 'EEG PO7-REF', 'PO3': 'EEG PO3-REF', 'O1': 'EEG O1-REF', 'Iz': 'EEG Iz-REF',
+    'Oz': 'EEG Oz-REF', 'POz': 'EEG POz-REF', 'Pz': 'EEG Pz-REF', 'CPz': 'EEG CPz-REF',
+    'Fpz': 'EEG Fpz-REF', 'Fp2': 'EEG FP2-REF', 'AF8': 'EEG AF8-REF', 'AF4': 'EEG AF4-REF',
+    'AFz': 'EEG AFz-REF', 'Fz': 'EEG Fz-REF', 'F2': 'EEG F2-REF', 'F4': 'EEG F4-REF',
+    'F6': 'EEG F6-REF', 'F8': 'EEG F8-REF', 'FT8': 'EEG FT8-REF', 'FC6': 'EEG FC6-REF',
+    'FC4': 'EEG FC4-REF', 'FC2': 'EEG FC2-REF', 'FCz': 'EEG FCz-REF', 'Cz': 'EEG Cz-REF',
+    'C2': 'EEG C2-REF', 'C4': 'EEG C4-REF', 'C6': 'EEG C6-REF', 'T8': 'EEG T8-REF',
+    'TP8': 'EEG TP8-REF', 'CP6': 'EEG CP6-REF', 'CP4': 'EEG CP4-REF', 'CP2': 'EEG CP2-REF',
+    'P2': 'EEG P2-REF', 'P4': 'EEG P4-REF', 'P6': 'EEG P6-REF', 'P8': 'EEG P8-REF',
+    'P10': 'EEG P10-REF', 'PO8': 'EEG PO8-REF', 'PO4': 'EEG PO4-REF', 'O2': 'EEG O2-REF'
+    }
+    ch_names = [name.upper() for name in channel_mapping.keys()]
+    return [ch_names]

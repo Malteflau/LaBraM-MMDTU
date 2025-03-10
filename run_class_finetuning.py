@@ -68,7 +68,7 @@ def get_args():
     parser.add_argument('--drop_path', type=float, default=0.1, metavar='PCT',
                         help='Drop path rate (default: 0.1)')
 
-    parser.add_argument('--disable_eval_during_finetuning', action='store_true', default=True)
+    parser.add_argument('--disable_eval_during_finetuning', action='store_true', default=False) ##normalt true
 
     parser.add_argument('--model_ema', action='store_true', default=False)
     parser.add_argument('--model_ema_decay', type=float, default=0.9999, help='')
@@ -147,6 +147,9 @@ def get_args():
     parser.add_argument('--no_auto_resume', action='store_false', dest='auto_resume')
     parser.set_defaults(auto_resume=False)
 
+    parser.add_argument('--regression', action='store_true', default=False,
+                    help='Treat the task as a regression problem instead of classification')
+    
     parser.add_argument('--save_ckpt', action='store_true')
     parser.add_argument('--no_save_ckpt', action='store_false', dest='save_ckpt')
     parser.set_defaults(save_ckpt=True)
@@ -249,7 +252,7 @@ def get_dataset(args):
             'P10': 'EEG P10-REF', 'PO8': 'EEG PO8-REF', 'PO4': 'EEG PO4-REF', 'O2': 'EEG O2-REF'
         }
         ch_names = [name.upper() for name in channel_mapping.keys()]
-        args.nb_classes = 1  # Binary classification for friend status
+        #args.nb_classes = 1  # Binary classification for friend status
         metrics = ["pr_auc", "roc_auc", "accuracy", "balanced_accuracy"]
 
     return train_dataset, test_dataset, val_dataset, ch_names, metrics
@@ -471,7 +474,11 @@ def main(args, ds_init):
         args.weight_decay, args.weight_decay_end, args.epochs, num_training_steps_per_epoch)
     print("Max WD = %.7f, Min WD = %.7f" % (max(wd_schedule_values), min(wd_schedule_values)))
 
-    if args.nb_classes == 1:
+    if args.regression:
+        criterion = utils.linear_regression_loss
+    elif args.nb_classes == 0:
+        criterion = torch.nn.BCEWithLogitsLoss()
+    elif args.nb_classes == 1:
         criterion = torch.nn.BCEWithLogitsLoss()
     elif args.smoothing > 0.:
         criterion = LabelSmoothingCrossEntropy(smoothing=args.smoothing)
@@ -494,6 +501,9 @@ def main(args, ds_init):
         print(f"======Accuracy: {np.mean(accuracy)} {np.std(accuracy)}, balanced accuracy: {np.mean(balanced_accuracy)} {np.std(balanced_accuracy)}")
         exit(0)
 
+        # Choose appropriate criterion based on task type
+
+
     print(f"Start training for {args.epochs} epochs")
     start_time = time.time()
     max_accuracy = 0.0
@@ -503,6 +513,7 @@ def main(args, ds_init):
             data_loader_train.sampler.set_epoch(epoch)
         if log_writer is not None:
             log_writer.set_step(epoch * num_training_steps_per_epoch * args.update_freq)
+        
         train_stats = train_one_epoch(
             model, criterion, data_loader_train, optimizer,
             device, epoch, loss_scaler, args.clip_grad, model_ema,
@@ -518,18 +529,48 @@ def main(args, ds_init):
                 loss_scaler=loss_scaler, epoch=epoch, model_ema=model_ema, save_ckpt_freq=args.save_ckpt_freq)
             
         if data_loader_val is not None:
-            val_stats = evaluate(data_loader_val, model, device, header='Val:', ch_names=ch_names, metrics=metrics, is_binary=args.nb_classes == 1)
-            print(f"Accuracy of the network on the {len(dataset_val)} val EEG: {val_stats['accuracy']:.2f}%")
-            test_stats = evaluate(data_loader_test, model, device, header='Test:', ch_names=ch_names, metrics=metrics, is_binary=args.nb_classes == 1)
-            print(f"Accuracy of the network on the {len(dataset_test)} test EEG: {test_stats['accuracy']:.2f}%")
-            
-            if max_accuracy < val_stats["accuracy"]:
-                max_accuracy = val_stats["accuracy"]
-                if args.output_dir and args.save_ckpt:
-                    utils.save_model(
-                        args=args, model=model, model_without_ddp=model_without_ddp, optimizer=optimizer,
-                        loss_scaler=loss_scaler, epoch="best", model_ema=model_ema)
-                max_accuracy_test = test_stats["accuracy"]
+            if args.regression:
+                # Use regression evaluation
+                val_stats = evaluate(data_loader_val, model, device, header='Val:', 
+                                    ch_names=ch_names, metrics=['mse', 'r2'], 
+                                    is_binary=args.nb_classes == 1, is_regression=True)
+                print(f"MSE of the network on the {len(dataset_val)} val EEG: {val_stats.get('mse', 0):.4f}")
+                print(f"R² of the network on the {len(dataset_val)} val EEG: {val_stats.get('r2', 0):.4f}")
+                
+                test_stats = evaluate(data_loader_test, model, device, header='Test:', 
+                                    ch_names=ch_names, metrics=['mse', 'r2'], 
+                                    is_binary=args.nb_classes == 1, is_regression=True)
+                print(f"MSE of the network on the {len(dataset_test)} test EEG: {test_stats.get('mse', 0):.4f}")
+                print(f"R² of the network on the {len(dataset_test)} test EEG: {test_stats.get('r2', 0):.4f}")
+                
+                # For regression, use R² as the monitoring metric
+                if 'r2' in val_stats and (max_accuracy < val_stats["r2"]):
+                    max_accuracy = val_stats["r2"]
+                    if args.output_dir and args.save_ckpt:
+                        utils.save_model(
+                            args=args, model=model, model_without_ddp=model_without_ddp, optimizer=optimizer,
+                            loss_scaler=loss_scaler, epoch="best", model_ema=model_ema)
+                    max_accuracy_test = test_stats.get("r2", 0)
+            else:
+                # Use the original classification evaluation
+                val_stats = evaluate(data_loader_val, model, device, header='Val:', 
+                                    ch_names=ch_names, metrics=metrics, 
+                                    is_binary=args.nb_classes == 1, is_regression=False)
+                print(f"Accuracy of the network on the {len(dataset_val)} val EEG: {val_stats['accuracy']:.2f}%")
+                
+                test_stats = evaluate(data_loader_test, model, device, header='Test:', 
+                                    ch_names=ch_names, metrics=metrics, 
+                                    is_binary=args.nb_classes == 1, is_regression=False)
+                print(f"Accuracy of the network on the {len(dataset_test)} test EEG: {test_stats['accuracy']:.2f}%")
+                
+                # For classification, continue using accuracy as the monitoring metric
+                if max_accuracy < val_stats["accuracy"]:
+                    max_accuracy = val_stats["accuracy"]
+                    if args.output_dir and args.save_ckpt:
+                        utils.save_model(
+                            args=args, model=model, model_without_ddp=model_without_ddp, optimizer=optimizer,
+                            loss_scaler=loss_scaler, epoch="best", model_ema=model_ema)
+                    max_accuracy_test = test_stats["accuracy"]
 
             print(f'Max accuracy val: {max_accuracy:.2f}%, max accuracy test: {max_accuracy_test:.2f}%')
             if log_writer is not None:
