@@ -38,9 +38,16 @@ def train_one_epoch(model: torch.nn.Module,
     header = 'Epoch: [{}]'.format(epoch)
     print_freq = 10
         
-    if hasattr(model.module, 'quantize'):
+    if hasattr(model, 'module'):
+        if hasattr(model.module, 'quantize'):
+            try:
+                model.module.quantize.reset_cluster_size(device)
+                print("Reset the codebook statistic info in quantizer before each epoch")
+            except:
+                pass
+    elif hasattr(model, 'quantize'):
         try:
-            model.module.quantize.reset_cluster_size(device)
+            model.quantize.reset_cluster_size(device)
             print("Reset the codebook statistic info in quantizer before each epoch")
         except:
             pass
@@ -54,7 +61,8 @@ def train_one_epoch(model: torch.nn.Module,
                 for i, param_group in enumerate(optimizer.param_groups):
                     if lr_schedule_values is not None:
                         param_group["lr"] = lr_schedule_values[it] * param_group.get("lr_scale", 1.0)
-            EEG = batch.float().to(device, non_blocking=True) / 100
+            EEG = batch[0]
+            EEG = EEG.float().to(device, non_blocking=True)
 
             with torch.cuda.amp.autocast(enabled=True):
                 loss, log_loss = model(EEG, input_chans=input_chans)

@@ -256,44 +256,20 @@ def is_participant_involved(condition_type, participant_num):
     Returns:
         bool: True if participant is involved, False otherwise
     """
-    if condition_type == 'solo_p1' and participant_num == 'P1':
+    if condition_type == 'T1P' or 'T1Pn' and participant_num == 'P1':
         return True
-    elif condition_type == 'solo_p3' and participant_num == 'P3':
+    elif condition_type == 'T2P' or 'T2Pn' and participant_num == 'P2':
         return True
-    elif condition_type == 'duo_p1p2' and participant_num in ['P1', 'P2']:
+    elif condition_type == 'T3P' or 'T3Pn' and participant_num == 'P3':
         return True
-    elif condition_type == 'duo_p1p3' and participant_num in ['P1', 'P3']:
+    elif condition_type == 'T12P' or 'T12Pn' and participant_num in ['P1', 'P2']:
         return True
-    elif condition_type == 'duo_p2p3' and participant_num in ['P2', 'P3']:
+    elif condition_type == 'T13P' or 'T13Pn' and participant_num in ['P1', 'P3']:
+        return True
+    elif condition_type == 'T23P' or 'T23Pn' and participant_num in ['P2', 'P3']:
         return True
     return False
 
-def parse_condition(condition):
-    """
-    Parse condition code to determine trial type and feedback status.
-    
-    Args:
-        condition: Condition string from the EEG file
-    
-    Returns:
-        tuple: (condition_type, has_feedback)
-    """
-    # Whether this has continuous feedback
-    has_feedback = 'Pn' not in condition
-    
-    # Extract numbers to determine who's involved
-    if condition.startswith('T1'):
-        return 'solo_p1', has_feedback
-    elif condition.startswith('T3'):
-        return 'solo_p3', has_feedback
-    elif condition.startswith('T12'):
-        return 'duo_p1p2', has_feedback
-    elif condition.startswith('T13'):
-        return 'duo_p1p3', has_feedback
-    elif condition.startswith('T23'):
-        return 'duo_p2p3', has_feedback
-    else:
-        return 'unknown', has_feedback
 
 def split_data_by_participant(processed_dir, output_dir):
     """
