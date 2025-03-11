@@ -244,31 +244,49 @@ def process_file(fif_file, participant_data, behavior_path, output_dir):
     except Exception as e:
         print(f"Error processing {fif_file}: {e}")
         return 0
+    
+def parse_participant(condition):
+    """
+    Parse condition code to determine which participants are involved.
+    
+    Args:
+        condition: Condition string from the EEG file (e.g., 'T12P', 'T13Pn', etc.)
+    
+    Returns:
+        list: List of participants involved in this condition
+    """
+    # Extract participants based on the condition code
+    if condition.startswith('T1'):
+        if condition.startswith('T12'):
+            return ['P1', 'P2']
+        elif condition.startswith('T13'):
+            return ['P1', 'P3']
+        else:
+            return ['P1']  # Solo P1
+    elif condition.startswith('T2'):
+        if condition.startswith('T23'):
+            return ['P2', 'P3']
+        else:
+            return ['P2']  # Solo P2 (though this shouldn't exist in your experiment)
+    elif condition.startswith('T3'):
+        return ['P3']  # Solo P3
+    else:
+        # For any unexpected condition format, return all participants as a fallback
+        return ['P1', 'P2', 'P3']
 
-def is_participant_involved(condition_type, participant_num):
+def is_participant_involved(condition, participant_num):
     """
     Determine if a participant is involved in a specific condition.
     
     Args:
-        condition_type: Type of condition (solo_p1, duo_p1p2, etc.)
+        condition: Condition string (e.g., 'T12P', 'T13Pn', etc.)
         participant_num: Participant number (P1, P2, P3)
     
     Returns:
         bool: True if participant is involved, False otherwise
     """
-    if condition_type == 'T1P' or 'T1Pn' and participant_num == 'P1':
-        return True
-    elif condition_type == 'T2P' or 'T2Pn' and participant_num == 'P2':
-        return True
-    elif condition_type == 'T3P' or 'T3Pn' and participant_num == 'P3':
-        return True
-    elif condition_type == 'T12P' or 'T12Pn' and participant_num in ['P1', 'P2']:
-        return True
-    elif condition_type == 'T13P' or 'T13Pn' and participant_num in ['P1', 'P3']:
-        return True
-    elif condition_type == 'T23P' or 'T23Pn' and participant_num in ['P2', 'P3']:
-        return True
-    return False
+    involved_participants = parse_participant(condition)
+    return participant_num in involved_participants
 
 
 def split_data_by_participant(processed_dir, output_dir):

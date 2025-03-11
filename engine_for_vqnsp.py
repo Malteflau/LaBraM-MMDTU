@@ -122,11 +122,21 @@ def train_one_epoch(model: torch.nn.Module,
     print("Averaged stats:", metric_logger)
     
     # stat the codebook usage information
-    if hasattr(model.module, 'quantize'):
+    if hasattr(model, 'module') and hasattr(model.module, 'quantize'):
         try:
             codebook_cluster_size = model.module.quantize._codebook.cluster_size
         except:
             codebook_cluster_size = model.module.quantize.cluster_size
+        zero_cnt = (codebook_cluster_size == 0).sum().item()
+        train_stat = {k: meter.global_avg for k, meter in metric_logger.meters.items()}
+        train_stat['Unused_code'] = zero_cnt
+        print(f"Unused code in codebook: {zero_cnt}")
+        return train_stat
+    elif hasattr(model, 'quantize'):
+        try:
+            codebook_cluster_size = model.quantize._codebook.cluster_size
+        except:
+            codebook_cluster_size = model.quantize.cluster_size
         zero_cnt = (codebook_cluster_size == 0).sum().item()
         train_stat = {k: meter.global_avg for k, meter in metric_logger.meters.items()}
         train_stat['Unused_code'] = zero_cnt
@@ -143,9 +153,17 @@ def evaluate(data_loader_list, model, device, log_writer=None, epoch=None, ch_na
     # switch to evaluation mode
     model.eval()
 
-    if hasattr(model.module, 'quantize'):
+    # More robust way to check for quantize attribute
+    if hasattr(model, 'module'):
+        if hasattr(model.module, 'quantize'):
+            try:
+                model.module.quantize.reset_cluster_size(device)
+                print("Reset the codebook statistic info in quantizer before testing")
+            except:
+                pass
+    elif hasattr(model, 'quantize'):
         try:
-            model.module.quantize.reset_cluster_size(device)
+            model.quantize.reset_cluster_size(device)
             print("Reset the codebook statistic info in quantizer before testing")
         except:
             pass
@@ -154,7 +172,8 @@ def evaluate(data_loader_list, model, device, log_writer=None, epoch=None, ch_na
         input_chans = utils.get_input_chans(ch_names)
         for step, (batch) in enumerate(metric_logger.log_every(data_loader, 10, header)):
 
-            images = batch.float().to(device, non_blocking=True) / 100
+            images = batch[0] if isinstance(batch, (list, tuple)) else batch
+            images = images.float().to(device, non_blocking=True)
             loss, log_loss = model(images, input_chans=input_chans)
 
             metric_logger.update(loss=loss.item())
@@ -167,11 +186,22 @@ def evaluate(data_loader_list, model, device, log_writer=None, epoch=None, ch_na
     print("Averaged stats:", metric_logger)
 
     # stat the codebook usage information
+    # Use the same robust approach for checking quantize attribute
     if hasattr(model, 'module') and hasattr(model.module, 'quantize'):
         try:
             codebook_cluster_size = model.module.quantize._codebook.cluster_size
         except:
             codebook_cluster_size = model.module.quantize.cluster_size
+        zero_cnt = (codebook_cluster_size == 0).sum().item()
+        test_stat = {k: meter.global_avg for k, meter in metric_logger.meters.items()}
+        test_stat['unused_code'] = zero_cnt
+        print(f"Unused code in codebook: {zero_cnt}")
+        return test_stat
+    elif hasattr(model, 'quantize'):
+        try:
+            codebook_cluster_size = model.quantize._codebook.cluster_size
+        except:
+            codebook_cluster_size = model.quantize.cluster_size
         zero_cnt = (codebook_cluster_size == 0).sum().item()
         test_stat = {k: meter.global_avg for k, meter in metric_logger.meters.items()}
         test_stat['unused_code'] = zero_cnt
@@ -193,7 +223,7 @@ def calculate_codebook_usage(data_loader, model, device, log_writer=None, epoch=
     codebook_cnt = torch.zeros(codebook_num, dtype=torch.float64).to(device)
 
     for step, (images) in enumerate(metric_logger.log_every(data_loader, 10, header)):
-        images = images.float().to(device, non_blocking=True) / 100
+        images = images.float().to(device, non_blocking=True)
 
         outputs = utils.get_model(model).get_tokens(images)['token'].view(-1)
         
