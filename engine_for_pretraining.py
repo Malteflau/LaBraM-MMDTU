@@ -83,8 +83,8 @@ def train_one_epoch(model: torch.nn.Module, vqnsp: torch.nn.Module,
                     if wd_schedule_values is not None and param_group["weight_decay"] > 0:
                         param_group["weight_decay"] = wd_schedule_values[it]
 
-            samples = batch
-            samples = samples.float().to(device, non_blocking=True) / 100
+            samples = batch[0]
+            samples = samples.float().to(device, non_blocking=True)
             samples = rearrange(samples, 'B N (A T) -> B N A T', T=200)
             bool_masked_pos = random_masking(samples.flatten(1, 2), mask_ratio=0.5).to(device, non_blocking=True)
 

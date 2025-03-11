@@ -17,6 +17,7 @@ import torch
 import torch.backends.cudnn as cudnn
 import json
 import os
+import pandas as pd
 
 from pathlib import Path
 from collections import OrderedDict
@@ -160,7 +161,7 @@ def get_args():
                         help='Perform evaluation only')
     parser.add_argument('--dist_eval', action='store_true', default=False,
                         help='Enabling distributed evaluation')
-    parser.add_argument('--num_workers', default=10, type=int)
+    parser.add_argument('--num_workers', default=4, type=int)
     parser.add_argument('--pin_mem', action='store_true',
                         help='Pin CPU memory in DataLoader for more efficient (sometimes) transfer to GPU.')
     parser.add_argument('--no_pin_mem', action='store_false', dest='pin_mem')
@@ -252,7 +253,7 @@ def get_dataset(args):
             'P10': 'EEG P10-REF', 'PO8': 'EEG PO8-REF', 'PO4': 'EEG PO4-REF', 'O2': 'EEG O2-REF'
         }
         ch_names = [name.upper() for name in channel_mapping.keys()]
-        #args.nb_classes = 1  # Binary classification for friend status
+        args.nb_classes = 1  # Binary classification for friend status
         metrics = ["pr_auc", "roc_auc", "accuracy", "balanced_accuracy"]
 
     return train_dataset, test_dataset, val_dataset, ch_names, metrics
@@ -360,6 +361,10 @@ def main(args, ds_init):
     print("Patch size = %s" % str(patch_size))
     args.window_size = (1, args.input_size // patch_size)
     args.patch_size = patch_size
+
+    # store vals
+    training_log = pd.DataFrame(columns=['epoch', 'train_loss', 'val_loss', 'test_loss', 
+                                     'train_acc', 'val_acc', 'test_acc', 'lr'])
 
     if args.finetune:
         if args.finetune.startswith('https'):
@@ -573,6 +578,23 @@ def main(args, ds_init):
                     max_accuracy_test = test_stats["accuracy"]
 
             print(f'Max accuracy val: {max_accuracy:.2f}%, max accuracy test: {max_accuracy_test:.2f}%')
+
+            new_row = {
+            'epoch': epoch,
+            'train_acc': np.mean(accuracy),
+            }
+
+            # If validation and test stats are available
+            if val_stats is not None:
+                new_row['val_acc'] = val_stats["accuracy"]
+                
+            if test_stats is not None:
+                new_row['test_acc'] = max_accuracy_test
+
+            # Append to dataframe
+            training_log = pd.concat([training_log, pd.DataFrame([new_row])], ignore_index=True)
+
+            
             if log_writer is not None:
                 for key, value in val_stats.items():
                     if key == 'accuracy':
@@ -614,6 +636,11 @@ def main(args, ds_init):
             log_stats = {**{f'train_{k}': v for k, v in train_stats.items()},
                          'epoch': epoch,
                          'n_parameters': n_parameters}
+        
+
+        # Optionally save to CSV after each epoch
+        if args.output_dir:
+            training_log.to_csv(os.path.join(args.output_dir, 'training_log.csv'), index=False)
 
         if args.output_dir and utils.is_main_process():
             if log_writer is not None:

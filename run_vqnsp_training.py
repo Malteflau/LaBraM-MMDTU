@@ -16,6 +16,7 @@ import torch
 import torch.backends.cudnn as cudnn
 import json
 import os
+import pandas as pd
 
 from pathlib import Path
 from timm.models import create_model
@@ -95,7 +96,7 @@ def get_args():
 
     parser.add_argument('--start_epoch', default=0, type=int, metavar='N',
                         help='start epoch')
-    parser.add_argument('--num_workers', default=10, type=int)
+    parser.add_argument('--num_workers', default=4, type=int)
     parser.add_argument('--pin_mem', action='store_true',
                         help='Pin CPU memory in DataLoader for more efficient (sometimes) transfer to GPU.')
     parser.add_argument('--no_pin_mem', action='store_false', dest='pin_mem',
@@ -168,16 +169,20 @@ def main(args):
     datasets_train = [["/work3/s224183/LaBraM_data/train"],["/work3/s224183/LaBraM_data/test"]]
     time_window = [4]
 
+    # Create empty dataframe to store training metrics
+    training_log = pd.DataFrame(columns=['epoch', 'train_loss', 'val_loss', 'test_loss', 
+                                        'train_acc', 'val_acc', 'test_acc', 'lr'])
+
     if args.use_dtu_loader:
         # Use the DTU data loader
         train_dataset, test_dataset, val_dataset = utils.prepare_DTU_data("/work3/s224183/LaBraM_data")
         dataset_train_list = [train_dataset]
-        dataset_train_list.append(test_dataset)
+        dataset_train_list.append(val_dataset)
         train_ch_names_list = get_channel_names()  # You'll need to define proper channel names if required
         
         if not args.disable_eval:
-            dataset_val_list = [val_dataset]
-            val_ch_names_list = get_channel_names  # Same here for channel names
+            dataset_val_list = [test_dataset]
+            val_ch_names_list = get_channel_names()  # Same here for channel names
     else:
         # Original ShockDataset loading logic
         dataset_train_list, train_ch_names_list = utils.build_pretraining_dataset(datasets_train, time_window, stride_size=200)
@@ -281,8 +286,10 @@ def main(args):
     print("Number of training steps = %d" % num_training_steps_per_epoch)
     print("Number of training examples per epoch = %d" % (total_batch_size * num_training_steps_per_epoch))
 
+    
     optimizer = create_optimizer(args, model_without_ddp)
     loss_scaler = NativeScaler()
+
 
     if args.distributed:
         model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu], find_unused_parameters=True)
@@ -347,6 +354,26 @@ def main(args):
         else:
             log_stats = {**{f'train_{k}': v for k, v in train_stats.items()},
                         'epoch': epoch, 'n_parameters': n_learnable_parameters}
+
+
+            # Save losses and accuracies for plots
+        new_row = {
+            'epoch': epoch,
+            'train_loss': train_stats.get('loss', float('nan')),
+            'train_acc': train_stats.get('class_acc', float('nan'))
+        }
+            
+        if test_stats is not None:
+            new_row['test_loss'] = test_stats.get('loss', float('nan'))
+            new_row['test_acc'] = test_stats.get('accuracy', float('nan'))
+
+        # Append to dataframe
+        training_log = pd.concat([training_log, pd.DataFrame([new_row])], ignore_index=True)
+
+        # Optionally save to CSV after each epoch
+        if args.output_dir:
+            training_log.to_csv(os.path.join(args.output_dir, 'training_log.csv'), index=False)
+
 
         if args.output_dir and utils.is_main_process():
             if log_writer is not None:
