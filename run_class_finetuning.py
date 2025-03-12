@@ -362,10 +362,6 @@ def main(args, ds_init):
     args.window_size = (1, args.input_size // patch_size)
     args.patch_size = patch_size
 
-    # store vals
-    training_log = pd.DataFrame(columns=['epoch', 'train_loss', 'val_loss', 'test_loss', 
-                                     'train_acc', 'val_acc', 'test_acc', 'lr'])
-
     if args.finetune:
         if args.finetune.startswith('https'):
             checkpoint = torch.hub.load_state_dict_from_url(
@@ -579,22 +575,6 @@ def main(args, ds_init):
 
             print(f'Max accuracy val: {max_accuracy:.2f}%, max accuracy test: {max_accuracy_test:.2f}%')
 
-            new_row = {
-            'epoch': epoch,
-            'train_acc': np.mean(accuracy),
-            }
-
-            # If validation and test stats are available
-            if val_stats is not None:
-                new_row['val_acc'] = val_stats["accuracy"]
-                
-            if test_stats is not None:
-                new_row['test_acc'] = max_accuracy_test
-
-            # Append to dataframe
-            training_log = pd.concat([training_log, pd.DataFrame([new_row])], ignore_index=True)
-
-            
             if log_writer is not None:
                 for key, value in val_stats.items():
                     if key == 'accuracy':
@@ -637,10 +617,6 @@ def main(args, ds_init):
                          'epoch': epoch,
                          'n_parameters': n_parameters}
         
-
-        # Optionally save to CSV after each epoch
-        if args.output_dir:
-            training_log.to_csv(os.path.join(args.output_dir, 'training_log.csv'), index=False)
 
         if args.output_dir and utils.is_main_process():
             if log_writer is not None:

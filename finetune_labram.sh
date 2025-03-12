@@ -3,7 +3,7 @@
 # -- our name ---
 #BSUB -J LaBraM_DTU_100epoch
 # -- choose queue --
-#BSUB -q gpuv100
+#BSUB -q gpua100
 # -- specify that we need 1GB of memory per core/slot --
 #BSUB -R "rusage[mem=1GB]"
 # -- Notify me by email when execution begins --
@@ -47,7 +47,7 @@ python /zhome/ce/8/186807/Desktop/Labram/LaBraM-MMDTU/run_labram_finetuning.py \
     --log_dir /zhome/ce/8/186807/Desktop/Labram/LaBraM-MMDTU/log/finetune_dtu_labram \
     --model labram_base_patch200_1600_8k_vocab \
     --tokenizer_model vqnsp_encoder_base_decoder_3x200x12 \
-    --tokenizer_weight /zhome/ce/8/186807/Desktop/Labram/LaBraM-MMDTU/checkpoints/vqnsp.pth \
+    --tokenizer_weight /zhome/ce/8/186807/Desktop/Labram/LaBraM-MMDTU/checkpoints/finetune_dtu_vqnsp/checkpoint-49.pth \
     --pretrained_model /zhome/ce/8/186807/Desktop/Labram/LaBraM-MMDTU/checkpoints/labram-base.pth \
     --batch_size 64 \
     --lr 5e-5 \
@@ -59,7 +59,7 @@ python /zhome/ce/8/186807/Desktop/Labram/LaBraM-MMDTU/run_labram_finetuning.py \
     --opt_betas 0.9 0.98 \
     --opt_eps 1e-8 \
     --weight_decay 0.05 \
-    --epochs 100 \
+    --epochs 50 \
     --save_ckpt_freq 10 \
     --codebook_dim 64 \
     --input_size 800 \

@@ -230,10 +230,6 @@ def main(args):
         datasets_test = [["/work3/s224183/LaBraM_data/test"]]
         datasets_val = [["/work3/s224183/LaBraM_data/val"]]
         time_window = [4]
-        
-        # Loss store 
-        training_log = pd.DataFrame(columns=['epoch', 'train_loss', 'val_loss', 'test_loss', 
-                                     'train_acc', 'val_acc', 'test_acc', 'lr'])
     
         dataset_train_list, train_ch_names_list = utils.build_pretraining_dataset(
             datasets_train, time_window, stride_size=800, start_percentage=0, end_percentage=1
@@ -327,9 +323,33 @@ def main(args):
         args.weight_decay, args.weight_decay_end, args.epochs, num_training_steps_per_epoch)
     print("Max WD = %.7f, Min WD = %.7f" % (max(wd_schedule_values), min(wd_schedule_values)))
 
-    utils.auto_load_model(
-        args=args, model=model, model_without_ddp=model_without_ddp, optimizer=optimizer, loss_scaler=loss_scaler)
-
+    if args.resume:
+        print(f"Loading checkpoint from {args.resume}")
+        checkpoint = torch.load(args.resume, map_location='cpu')
+        
+        if 'model' in checkpoint:
+            model_dict = checkpoint['model']
+            # Remove the problematic key
+            if 'logit_scale' in model_dict:
+                print("Removing logit_scale from checkpoint")
+                del model_dict['logit_scale']
+            
+            # Load the modified state dict
+            model_without_ddp.load_state_dict(model_dict, strict=False)  # Use strict=False for safety
+            
+        # Load optimizer state, etc. if needed
+        if 'optimizer' in checkpoint:
+            optimizer.load_state_dict(checkpoint['optimizer'])
+        if 'epoch' in checkpoint:
+            args.start_epoch = checkpoint['epoch'] + 1
+        if 'scaler' in checkpoint and loss_scaler is not None:
+            loss_scaler.load_state_dict(checkpoint['scaler'])
+    else:
+        # Use the normal auto_load_model function if not resuming
+        utils.auto_load_model(
+            args=args, model=model, model_without_ddp=model_without_ddp, 
+            optimizer=optimizer, loss_scaler=loss_scaler)
+    
     print(f"Start fine-tuning for {args.epochs} epochs")
     start_time = time.time()
     for epoch in range(args.start_epoch, args.epochs):
@@ -365,19 +385,7 @@ def main(args):
                 log_writer.flush()
             with open(os.path.join(args.output_dir, "log.txt"), mode="a", encoding="utf-8") as f:
                 f.write(json.dumps(log_stats) + "\n")
-        
-                    # Save losses and accuracies for plots
-        new_row = {
-            'epoch': epoch,
-            'train_loss': train_stats.get('loss', float('nan')),
-        }
 
-        # Append to dataframe
-        training_log = pd.concat([training_log, pd.DataFrame([new_row])], ignore_index=True)
-
-        # Optionally save to CSV after each epoch
-        if args.output_dir:
-            training_log.to_csv(os.path.join(args.output_dir, 'training_log.csv'), index=False)
 
 
 

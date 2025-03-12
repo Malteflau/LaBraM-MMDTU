@@ -169,10 +169,6 @@ def main(args):
     datasets_train = [["/work3/s224183/LaBraM_data/train"],["/work3/s224183/LaBraM_data/test"]]
     time_window = [4]
 
-    # Create empty dataframe to store training metrics
-    training_log = pd.DataFrame(columns=['epoch', 'train_loss', 'val_loss', 'test_loss', 
-                                        'train_acc', 'val_acc', 'test_acc', 'lr'])
-
     if args.use_dtu_loader:
         # Use the DTU data loader
         train_dataset, test_dataset, val_dataset = utils.prepare_DTU_data("/work3/s224183/LaBraM_data")
@@ -354,25 +350,6 @@ def main(args):
         else:
             log_stats = {**{f'train_{k}': v for k, v in train_stats.items()},
                         'epoch': epoch, 'n_parameters': n_learnable_parameters}
-
-
-            # Save losses and accuracies for plots
-        new_row = {
-            'epoch': epoch,
-            'train_loss': train_stats.get('loss', float('nan')),
-            'train_acc': train_stats.get('class_acc', float('nan'))
-        }
-            
-        if test_stats is not None:
-            new_row['test_loss'] = test_stats.get('loss', float('nan'))
-            new_row['test_acc'] = test_stats.get('accuracy', float('nan'))
-
-        # Append to dataframe
-        training_log = pd.concat([training_log, pd.DataFrame([new_row])], ignore_index=True)
-
-        # Optionally save to CSV after each epoch
-        if args.output_dir:
-            training_log.to_csv(os.path.join(args.output_dir, 'training_log.csv'), index=False)
 
 
         if args.output_dir and utils.is_main_process():
