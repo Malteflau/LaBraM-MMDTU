@@ -1,7 +1,7 @@
 #!/bin/bash
 # embedded options to bsub - start with #BSUB
 # -- our name ---
-#BSUB -J LaBraM_DTU_solovsgroup_50epoch
+#BSUB -J LaBraM_DTU_feedback_50epoch
 # -- choose queue --
 #BSUB -q gpuv100
 # -- specify that we need 4GB of memory per core/slot --
@@ -13,9 +13,9 @@
 # -- email address -- 
 #BSUB -u s224183@dtu.dk
 # -- Output File --
-#BSUB -o ./log/finetune_dtu_base/solovsgroup/LaBraM_DTU_solovsgroup_%J.out
+#BSUB -o ./log/finetune_dtu_base/feedback/LaBraM_DTU_feedback_%J.out
 # -- Error File --
-#BSUB -e ./log/finetune_dtu_base/solovsgroup/LaBraM_DTU_solovsgroup_%J.err
+#BSUB -e ./log/finetune_dtu_base/feedback/LaBraM_DTU_feedback_%J.err
 # -- estimated wall clock time (execution time): hh:mm -- 
 #BSUB -W 24:00
 # -- Number of cores requested -- 
@@ -27,8 +27,8 @@
 # -- end of LSF options -- 
 
 # Create log directories if they don't exist
-mkdir -p ./log/finetune_dtu_base/solovsgroup
-mkdir -p ./checkpoints/finetune_dtu_base/solovsgroup
+mkdir -p ./log/finetune_dtu_base/feedback
+mkdir -p ./checkpoints/finetune_dtu_base/feedback
 
 # Export unlimited file size for core dumps and stack traces
 ulimit -c unlimited
@@ -43,21 +43,23 @@ conda activate labram
 
 # Run the training with full output logging
 python run_class_finetuning.py \
-    --output_dir ./checkpoints/finetune_dtu_base/solovsgroup \
-    --log_dir ./log/finetune_dtu_base/solovsgroup \
+    --output_dir ./checkpoints/finetune_dtu_base/feedback \
+    --log_dir ./log/finetune_dtu_base/feedback \
     --model labram_base_patch200_200 \
-    --finetune /zhome/ce/8/186807/Desktop/Labram/LaBraM-MMDTU/checkpoints/labram-base.pth \
+    --finetune /zhome/ce/8/186807/Desktop/Labram/LaBraM-MMDTU/checkpoints/finetune_dtu_labram1/checkpoint-49.pth \
     --weight_decay 0.05 \
     --batch_size 64 \
     --lr 5e-4 \
     --update_freq 1 \
     --warmup_epochs 5 \
-    --epochs 50 \
+    --epochs 150 \
     --layer_decay 0.65 \
     --drop_path 0.1 \
-    --save_ckpt_freq 5 \
+    --save_ckpt_freq 50 \
     --disable_rel_pos_bias \
     --abs_pos_emb \
     --dataset DTU \
     --disable_qkv_bias \
     --seed 0
+
+    

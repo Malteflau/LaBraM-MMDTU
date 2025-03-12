@@ -61,3 +61,5 @@ python run_class_finetuning.py \
     --dataset DTU \
     --disable_qkv_bias \
     --seed 0
+
+    

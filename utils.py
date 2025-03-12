@@ -824,7 +824,7 @@ class DTULoader(torch.utils.data.Dataset):
         X = sample["X"]
         
         ######Has feedback
-        y = sample["y"]
+        #y = sample["y"]
 
         ######Friendship status
         #y = 1 if sample["friend_status"] == "Yes" else 0
@@ -847,7 +847,7 @@ class DTULoader(torch.utils.data.Dataset):
             else:
                 return False
 
-        #y = split_solo_vs_group(sample["condition"],sample["participant_num"])
+        y = split_solo_vs_group(sample["condition"],sample["participant_num"])
 
         #y = 1 if sample["gender"] == "M" else 0
 
@@ -865,6 +865,29 @@ class DTULoader(torch.utils.data.Dataset):
         y_tensor = torch.FloatTensor([y]).squeeze() # This makes it [1] instead of [1,1]
 
         return X_tensor, y_tensor
+    
+    # def __getitem__(self, index):
+    #     sample = pickle.load(open(os.path.join(self.root, self.files[index]), "rb"))
+    #     X = sample["X"]
+        
+    #     # Handle padding to match expected input size of 1600
+    #     if X.ndim == 3:  # [channels, patches, time_per_patch]
+    #         channels, patches, time_per_patch = X.shape
+    #         # Reshape to [channels, total_time_points]
+    #         X = X.reshape(channels, patches * time_per_patch)
+        
+    #     # Pad to 1600 if needed
+    #     current_length = X.shape[1]
+    #     if current_length < 1600:
+    #         padded_X = np.zeros((X.shape[0], 1600))
+    #         padded_X[:, :current_length] = X
+    #         X = padded_X
+        
+    #     # Convert to tensor
+    #     X_tensor = torch.FloatTensor(X)
+    #     y_tensor = torch.FloatTensor([sample["y"]]).squeeze()
+        
+    #     return X_tensor, y_tensor
     
 def linear_regression_loss(output, target):
     """
@@ -898,46 +921,46 @@ def prepare_DTU_data(root):
     print("Dataset class distribution:")
     
     # For training set
-    train_labels = []
-    for i in range(len(train_dataset)):
-        _, y = train_dataset[i]
-        if hasattr(y, 'item'):
-            train_labels.append(y.item())
-        else:
-            train_labels.append(int(y))
+    # train_labels = []
+    # for i in range(len(train_dataset)):
+    #     _, y = train_dataset[i]
+    #     if hasattr(y, 'item'):
+    #         train_labels.append(y.item())
+    #     else:
+    #         train_labels.append(int(y))
     
-    train_counts = np.bincount(train_labels)
-    train_total = len(train_labels)
-    print(f"Training set: Class 0: {train_counts[0]} ({train_counts[0]/train_total:.2%}), " 
-          f"Class 1: {train_counts[1]} ({train_counts[1]/train_total:.2%})")
+    # train_counts = np.bincount(train_labels)
+    # train_total = len(train_labels)
+    # print(f"Training set: Class 0: {train_counts[0]} ({train_counts[0]/train_total:.2%}), " 
+    #       f"Class 1: {train_counts[1]} ({train_counts[1]/train_total:.2%})")
     
-    # For validation set
-    val_labels = []
-    for i in range(len(val_dataset)):
-        _, y = val_dataset[i]
-        if hasattr(y, 'item'):
-            val_labels.append(y.item())
-        else:
-            val_labels.append(int(y))
+    # # For validation set
+    # val_labels = []
+    # for i in range(len(val_dataset)):
+    #     _, y = val_dataset[i]
+    #     if hasattr(y, 'item'):
+    #         val_labels.append(y.item())
+    #     else:
+    #         val_labels.append(int(y))
     
-    val_counts = np.bincount(val_labels)
-    val_total = len(val_labels)
-    print(f"Validation set: Class 0: {val_counts[0]} ({val_counts[0]/val_total:.2%}), "
-          f"Class 1: {val_counts[1]} ({val_counts[1]/val_total:.2%})")
+    # val_counts = np.bincount(val_labels)
+    # val_total = len(val_labels)
+    # print(f"Validation set: Class 0: {val_counts[0]} ({val_counts[0]/val_total:.2%}), "
+    #       f"Class 1: {val_counts[1]} ({val_counts[1]/val_total:.2%})")
     
-    # For test set
-    test_labels = []
-    for i in range(len(test_dataset)):
-        _, y = test_dataset[i]
-        if hasattr(y, 'item'):
-            test_labels.append(y.item())
-        else:
-            test_labels.append(int(y))
+    # # For test set
+    # test_labels = []
+    # for i in range(len(test_dataset)):
+    #     _, y = test_dataset[i]
+    #     if hasattr(y, 'item'):
+    #         test_labels.append(y.item())
+    #     else:
+    #         test_labels.append(int(y))
     
-    test_counts = np.bincount(test_labels)
-    test_total = len(test_labels)
-    print(f"Test set: Class 0: {test_counts[0]} ({test_counts[0]/test_total:.2%}), "
-          f"Class 1: {test_counts[1]} ({test_counts[1]/test_total:.2%})")
+    # test_counts = np.bincount(test_labels)
+    # test_total = len(test_labels)
+    # print(f"Test set: Class 0: {test_counts[0]} ({test_counts[0]/test_total:.2%}), "
+    #       f"Class 1: {test_counts[1]} ({test_counts[1]/test_total:.2%})")
     
     return train_dataset, test_dataset, val_dataset
 

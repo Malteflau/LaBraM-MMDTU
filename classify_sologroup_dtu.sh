@@ -46,7 +46,7 @@ python run_class_finetuning.py \
     --output_dir ./checkpoints/finetune_dtu_base/solovsgroup \
     --log_dir ./log/finetune_dtu_base/solovsgroup \
     --model labram_base_patch200_200 \
-    --finetune /zhome/ce/8/186807/Desktop/Labram/LaBraM-MMDTU/checkpoints/labram-base.pth \
+    --finetune /zhome/ce/8/186807/Desktop/Labram/LaBraM-MMDTU/checkpoints/finetune_dtu_labram1/checkpoint-49.pth \
     --weight_decay 0.05 \
     --batch_size 64 \
     --lr 5e-4 \
