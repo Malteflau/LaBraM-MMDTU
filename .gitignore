@@ -5,4 +5,11 @@ ExperimentalSetup/__pycache__/dataloader.cpython-311.pyc
 LaBraM_data/
 processed/
 log/
-checkpoints/
+*.pth
+*.pt
+*.ckpt
+*.bin
+!/checkpoints/*.txt
+!/checkpoints/*/*.txt
+!/*/checkpoints/*.txt
+!/*/checkpoints/*/*.txt
