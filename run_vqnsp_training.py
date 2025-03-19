@@ -171,27 +171,26 @@ def main(args):
 
     if args.use_dtu_loader:
         # Use the DTU data loader
-        train_dataset, test_dataset, val_dataset = utils.prepare_DTU_data("/work3/s224183/LaBraM_data")
+        train_dataset, test_dataset= utils.prepare_DTU_data("/work3/s224183/LaBraM_data")
         dataset_train_list = [train_dataset]
-        dataset_train_list.append(val_dataset)
         train_ch_names_list = get_channel_names()  # You'll need to define proper channel names if required
         
         if not args.disable_eval:
-            dataset_val_list = [test_dataset]
-            val_ch_names_list = get_channel_names()  # Same here for channel names
+            dataset_test_list = [test_dataset]
+            test_ch_names_list = get_channel_names()  # Same here for channel names
     else:
         # Original ShockDataset loading logic
         dataset_train_list, train_ch_names_list = utils.build_pretraining_dataset(datasets_train, time_window, stride_size=200)
         
         if not args.disable_eval:
-            dataset_val_list, val_ch_names_list = utils.build_pretraining_dataset(datasets_val, [4])
+            dataset_test_list, test_ch_names_list = utils.build_pretraining_dataset(datasets_test, [4])
         dataset_train_list, train_ch_names_list = utils.build_pretraining_dataset(datasets_train, time_window, stride_size=200)
 
     model = get_model(args, pretrained=True, pretrained_weight=args.pretrained_tokenizer)
 
 
-    datasets_val = [
-        ["/work3/s224183/LaBraM_data/val"]
+    datasets_test = [
+        ["/work3/s224183/LaBraM_data/test"]
     ]
 
     if True:  # args.distributed:
@@ -214,17 +213,17 @@ def main(args):
             #     print('Warning: Enabling distributed evaluation with an eval dataset not divisible by process number. '
             #           'This will slightly alter validation results as extra duplicate entries are added to achieve '
             #           'equal num of samples per-process.')
-            for dataset in dataset_val_list:
-                sampler_val = torch.utils.data.DistributedSampler(
+            for dataset in dataset_test_list:
+                sampler_test = torch.utils.data.DistributedSampler(
                     dataset, num_replicas=num_tasks, rank=global_rank, shuffle=False)
-                sampler_eval_list.append(sampler_val)
+                sampler_eval_list.append(sampler_test)
         else:
-            for dataset in dataset_val_list:
-                sampler_val = torch.utils.data.SequentialSampler(dataset)
-                sampler_eval_list.append(sampler_val)
+            for dataset in dataset_test_list:
+                sampler_test = torch.utils.data.SequentialSampler(dataset)
+                sampler_eval_list.append(sampler_test)
     else:
         sampler_train = torch.utils.data.RandomSampler(dataset_train)
-        sampler_val = torch.utils.data.SequentialSampler(dataset_val)
+        sampler_test = torch.utils.data.SequentialSampler(dataset_test)
 
     if global_rank == 0 and args.log_dir is not None:
         os.makedirs(args.log_dir, exist_ok=True)
@@ -243,19 +242,19 @@ def main(args):
         )
         data_loader_train_list.append(data_loader_train)
 
-    if dataset_val_list is not None:
-        data_loader_val_list = []
-        for dataset, sampler in zip(dataset_val_list, sampler_eval_list):
-            data_loader_val = torch.utils.data.DataLoader(
+    if dataset_test_list is not None:
+        data_loader_test_list = []
+        for dataset, sampler in zip(dataset_test_list, sampler_eval_list):
+            data_loader_test = torch.utils.data.DataLoader(
                 dataset, sampler=sampler,
                 batch_size=int(1.5 * args.batch_size),
                 num_workers=args.num_workers,
                 pin_memory=args.pin_mem,
                 drop_last=False
             )
-            data_loader_val_list.append(data_loader_val)
+            data_loader_test_list.append(data_loader_test)
     else:
-        data_loader_val_list = None
+        data_loader_test_list = None
 
     model.to(device)
     model_without_ddp = model
@@ -301,11 +300,11 @@ def main(args):
         args=args, model=model, model_without_ddp=model_without_ddp, optimizer=optimizer, loss_scaler=loss_scaler)
             
     if args.eval:
-        test_stats = evaluate(data_loader_val, model, device, log_writer, 0, args=args)
+        test_stats = evaluate(data_loader_test, model, device, log_writer, 0, args=args)
         exit(0)
         
     if args.calculate_codebook_usage:
-        test_stats = calculate_codebook_usage(data_loader_val, model, device, log_writer, 0, args=args)
+        test_stats = calculate_codebook_usage(data_loader_test, model, device, log_writer, 0, args=args)
         exit(0)
         
     print(f"Start training for {args.epochs} epochs")
@@ -337,12 +336,12 @@ def main(args):
                 args=args, model=model, model_without_ddp=model_without_ddp, optimizer=optimizer,
                 loss_scaler=loss_scaler, epoch=epoch, save_ckpt_freq=args.save_ckpt_freq)
         
-        if data_loader_val_list is not None:
-            test_stats = evaluate(data_loader_val_list, model, device, log_writer, epoch, ch_names_list=val_ch_names_list, args=args)
-            print(f"Validation loss of the network on the {sum([len(dataset) for dataset in dataset_val_list])} test EEG: {test_stats['loss']:.4f}")
+        if data_loader_test_list is not None:
+            test_stats = evaluate(data_loader_test_list, model, device, log_writer, epoch, ch_names_list=test_ch_names_list, args=args)
+            print(f"Validation loss of the network on the {sum([len(dataset) for dataset in dataset_test_list])} test EEG: {test_stats['loss']:.4f}")
 
             if log_writer is not None:
-                log_writer.update(**test_stats, head="val/loss")
+                log_writer.update(**test_stats, head="test/loss")
                 
             log_stats = {**{f'train_{k}': v for k, v in train_stats.items()},
                         **{f'test_{k}': v for k, v in test_stats.items()},

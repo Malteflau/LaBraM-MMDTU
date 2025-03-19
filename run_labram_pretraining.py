@@ -170,7 +170,7 @@ def main(args):
     args.window_size = (1, args.input_size // patch_size)
     args.patch_size = patch_size
 
-    dataset_train = [["filepath"],["filepath"]]
+    datasets_train = [["filepath"],["filepath"]]
     time_window = [4]
     #or 
     time_window = [8]

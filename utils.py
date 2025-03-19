@@ -792,17 +792,16 @@ def prepare_TUAB_dataset(root):
 
     train_files = os.listdir(os.path.join(root, "train"))
     np.random.shuffle(train_files)
-    val_files = os.listdir(os.path.join(root, "val"))
+
     test_files = os.listdir(os.path.join(root, "test"))
 
-    print(len(train_files), len(val_files), len(test_files))
+    print(len(train_files), len(test_files))
 
     # prepare training and test data loader
     train_dataset = TUABLoader(os.path.join(root, "train"), train_files)
     test_dataset = TUABLoader(os.path.join(root, "test"), test_files)
-    val_dataset = TUABLoader(os.path.join(root, "val"), val_files)
-    print(len(train_files), len(val_files), len(test_files))
-    return train_dataset, test_dataset, val_dataset
+    print(len(train_files), len(test_files))
+    return train_dataset, test_dataset
 
 """""
 Malte and Magnus' code goes here
@@ -810,48 +809,88 @@ Malte and Magnus' code goes here
 """""
 
 class DTULoader(torch.utils.data.Dataset):
-    def __init__(self, root, files, sampling_rate=200):
+    def __init__(self, root, files, sampling_rate=200, condition=["feedback"], 
+                 filter_feedback_only=None, filter_non_feedback_only=None, filter_non_participant=True):
         self.root = root
         self.files = files
         self.default_rate = 200
         self.sampling_rate = sampling_rate
+        self.filter_feedback_only = filter_feedback_only
+        self.filter_non_feedback_only = filter_non_feedback_only
+        self.filter_non_participant = filter_non_participant
+        self.condition = condition
         
+        # Pre-scan to find valid indices
+        self.valid_indices = []
+        if (filter_feedback_only == True) or (filter_non_feedback_only == True):
+            for i, file in enumerate(self.files):
+                try:
+                    with open(os.path.join(self.root, file), 'rb') as f:
+                        sample = pickle.load(f)
+                        
+                        # Check if the sample meets our filtering criteria
+                        keep_sample = True
+                        
+                        # Apply feedback filters if requested
+                        if self.filter_feedback_only is not None:
+                            has_feedback = sample.get("has_feedback", True)
+                            if self.filter_feedback_only and not has_feedback:
+                                # We only want samples WITH feedback but this one doesn't have it
+                                keep_sample = False
+                            elif self.filter_non_feedback_only and has_feedback:
+                                # We only want samples WITHOUT feedback but this one has it
+                                keep_sample = False
+                        
+                        # Apply non-participant filter if requested
+                        if self.filter_non_participant and keep_sample:
+                            condition_str = sample.get("condition", "")
+                            participant_num = sample.get("participant_num", "")
+                            
+                            # Check specific conditions where participant is not involved
+                            if condition_str.startswith("T23") and participant_num == "P1":
+                                keep_sample = False
+                            elif condition_str.startswith("T13") and participant_num == "P2":
+                                keep_sample = False
+                            elif condition_str.startswith("T12") and participant_num == "P3":
+                                keep_sample = False
+                        
+                        if keep_sample:
+                            self.valid_indices.append(i)
+                            
+                except Exception as e:
+                    print(f"Error reading file {file}: {e}")
+            
+        if len(self.valid_indices) == 0:
+            print(f"Warning: No valid samples found after filtering in {root}")
+            # Fallback to using all files if filtering resulted in empty dataset
+            self.valid_indices = list(range(len(files)))
+    
     def __len__(self):
-        return len(self.files)
+        return len(self.valid_indices)
 
     def __getitem__(self, index):
-        sample = pickle.load(open(os.path.join(self.root, self.files[index]), "rb"))
+        file_index = self.valid_indices[index]
+        file = self.files[file_index]
+        sample = pickle.load(open(os.path.join(self.root, file), "rb"))
         X = sample["X"]
         
-        ######Has feedback
-        #y = sample["y"]
+        # Determine label based on condition
+        if self.condition[0] == "feedback":
+            y = sample["y"]  # Use pre-existing feedback label
+        elif self.condition[0] == "friendship":
+            y = 1 if sample["friend_status"] == "Yes" else 0
+        elif self.condition[0] == "sologroup":
+            # Determine if this is a solo trial for this participant
+            condition_str = sample.get("condition", "")
+            participant_num = sample.get("participant_num", "")
+            y = self._is_solo_condition(condition_str, participant_num)
+        elif self.condition[0] == "gender":
+            y = 1 if sample["gender"] == "M" else 0
+        else:
+            # Default fallback to feedback label
+            y = sample["y"]
 
-        ######Friendship status
-        #y = 1 if sample["friend_status"] == "Yes" else 0
-
-        ######class close friends
-        #y = 1 if sample["class_friends"] >= 15 else 0 
-        
-        # ######age above 22
-        #y = 1 if sample["age"] > 22 else 0
-
-        def split_solo_vs_group(condition_type,participant_num):
-            if condition_type in ('T1P', 'T1Pn'):
-                return True
-            elif condition_type in ('T12P', 'T12Pn') and participant_num == 'P3':
-                return True
-            elif condition_type in ('T13P', 'T13Pn') and participant_num == 'P2':
-                return True
-            elif condition_type in ('T23P', 'T23Pn') and participant_num == 'P1':
-                return True
-            else:
-                return False
-
-        y = split_solo_vs_group(sample["condition"],sample["participant_num"])
-
-        #y = 1 if sample["gender"] == "M" else 0
-
-       ## If X has shape [channels, patches, time_per_patch]
+        # If X has shape [channels, patches, time_per_patch]
         if X.ndim == 3:
             channels, patches, time_per_patch = X.shape
             # Reshape to [channels, total_time_points]
@@ -861,33 +900,23 @@ class DTULoader(torch.utils.data.Dataset):
         X_tensor = torch.FloatTensor(X)
         
         # Create target tensor with correct shape - scalar instead of extra dimensions
-
-        y_tensor = torch.FloatTensor([y]).squeeze() # This makes it [1] instead of [1,1]
+        y_tensor = torch.FloatTensor([y]).squeeze()  # This makes it [1] instead of [1,1]
 
         return X_tensor, y_tensor
     
-    # def __getitem__(self, index):
-    #     sample = pickle.load(open(os.path.join(self.root, self.files[index]), "rb"))
-    #     X = sample["X"]
-        
-    #     # Handle padding to match expected input size of 1600
-    #     if X.ndim == 3:  # [channels, patches, time_per_patch]
-    #         channels, patches, time_per_patch = X.shape
-    #         # Reshape to [channels, total_time_points]
-    #         X = X.reshape(channels, patches * time_per_patch)
-        
-    #     # Pad to 1600 if needed
-    #     current_length = X.shape[1]
-    #     if current_length < 1600:
-    #         padded_X = np.zeros((X.shape[0], 1600))
-    #         padded_X[:, :current_length] = X
-    #         X = padded_X
-        
-    #     # Convert to tensor
-    #     X_tensor = torch.FloatTensor(X)
-    #     y_tensor = torch.FloatTensor([sample["y"]]).squeeze()
-        
-    #     return X_tensor, y_tensor
+    def _is_solo_condition(self, condition_str, participant_num):
+        """Helper method to determine if a trial is solo for this participant"""
+        if condition_str.startswith("T1") and not condition_str.startswith("T12") and not condition_str.startswith("T13"):
+            return True  # Direct solo condition
+        elif condition_str.startswith("T23") and participant_num == "P1":
+            return True  # Participant 1 not involved in T23
+        elif condition_str.startswith("T13") and participant_num == "P2":
+            return True  # Participant 2 not involved in T13
+        elif condition_str.startswith("T12") and participant_num == "P3":
+            return True  # Participant 3 not involved in T12
+        else:
+            return False  # Group condition for this participant
+    
     
 def linear_regression_loss(output, target):
     """
@@ -902,67 +931,64 @@ def linear_regression_loss(output, target):
     """
     return torch.mean((output - target) ** 2)
 
-def prepare_DTU_data(root):
-    # set random seed
+def prepare_DTU_data(root, condition=["feedback"], filter_feedback_only=None, 
+                     filter_non_feedback_only=None, filter_non_participant=True):
     seed = 12345
     np.random.seed(seed)
 
     # Get all files in each directory
     train_files = os.listdir(os.path.join(root, "train"))
-    val_files = os.listdir(os.path.join(root, "val"))
     test_files = os.listdir(os.path.join(root, "test"))
-
-    # Create dataset loaders
-    train_dataset = DTULoader(os.path.join(root, "train"), train_files)
-    test_dataset = DTULoader(os.path.join(root, "test"), test_files)
-    val_dataset = DTULoader(os.path.join(root, "val"), val_files)
+    
+    train_dataset = DTULoader(
+        os.path.join(root, "train"), 
+        train_files,
+        condition=condition, 
+        filter_feedback_only=filter_feedback_only,
+        filter_non_feedback_only=filter_non_feedback_only,
+        filter_non_participant=filter_non_participant
+    )
+    
+    test_dataset = DTULoader(
+        os.path.join(root, "test"), 
+        test_files,
+        condition=condition, 
+        filter_feedback_only=filter_feedback_only,
+        filter_non_feedback_only=filter_non_feedback_only,
+        filter_non_participant=filter_non_participant
+    )
     
     # Print class distribution statistics
-    print("Dataset class distribution:")
+    print("Dataset class distribution after filtering:")
     
     # For training set
-    # train_labels = []
-    # for i in range(len(train_dataset)):
-    #     _, y = train_dataset[i]
-    #     if hasattr(y, 'item'):
-    #         train_labels.append(y.item())
-    #     else:
-    #         train_labels.append(int(y))
+    train_labels = []
+    for i in range(len(train_dataset)):
+        _, y = train_dataset[i]
+        if hasattr(y, 'item'):
+            train_labels.append(y.item())
+        else:
+            train_labels.append(int(y))
     
-    # train_counts = np.bincount(train_labels)
-    # train_total = len(train_labels)
-    # print(f"Training set: Class 0: {train_counts[0]} ({train_counts[0]/train_total:.2%}), " 
-    #       f"Class 1: {train_counts[1]} ({train_counts[1]/train_total:.2%})")
+    train_counts = np.bincount(train_labels)
+    train_total = len(train_labels)
+    print(f"Training set: Class 0: {train_counts[0]} ({train_counts[0]/train_total:.2%}), " 
+          f"Class 1: {train_counts[1]} ({train_counts[1]/train_total:.2%})")
     
-    # # For validation set
-    # val_labels = []
-    # for i in range(len(val_dataset)):
-    #     _, y = val_dataset[i]
-    #     if hasattr(y, 'item'):
-    #         val_labels.append(y.item())
-    #     else:
-    #         val_labels.append(int(y))
+    test_labels = []
+    for i in range(len(test_dataset)):
+        _, y = test_dataset[i]
+        if hasattr(y, 'item'):
+            test_labels.append(y.item())
+        else:
+            test_labels.append(int(y))
     
-    # val_counts = np.bincount(val_labels)
-    # val_total = len(val_labels)
-    # print(f"Validation set: Class 0: {val_counts[0]} ({val_counts[0]/val_total:.2%}), "
-    #       f"Class 1: {val_counts[1]} ({val_counts[1]/val_total:.2%})")
+    test_counts = np.bincount(test_labels)
+    test_total = len(test_labels)
+    print(f"Training set: Class 0: {test_counts[0]} ({test_counts[0]/test_total:.2%}), " 
+          f"Class 1: {test_counts[1]} ({test_counts[1]/test_total:.2%})")
     
-    # # For test set
-    # test_labels = []
-    # for i in range(len(test_dataset)):
-    #     _, y = test_dataset[i]
-    #     if hasattr(y, 'item'):
-    #         test_labels.append(y.item())
-    #     else:
-    #         test_labels.append(int(y))
-    
-    # test_counts = np.bincount(test_labels)
-    # test_total = len(test_labels)
-    # print(f"Test set: Class 0: {test_counts[0]} ({test_counts[0]/test_total:.2%}), "
-    #       f"Class 1: {test_counts[1]} ({test_counts[1]/test_total:.2%})")
-    
-    return train_dataset, test_dataset, val_dataset
+    return train_dataset, test_dataset
 
 """""
 Malte and Magnus' code ends here

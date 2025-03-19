@@ -62,7 +62,7 @@ def get_args():
 
     # Tokenizer parameters
     parser.add_argument('--codebook_size', default=8192, type=int, help='number of codebook')
-    parser.add_argument('--codebook_dim', default=32, type=int, help='number of codebook')
+    parser.add_argument('--codebook_dim', default=64, type=int, help='number of codebook')
 
     # Optimizer parameters
     parser.add_argument('--opt', default='adamw', type=str, metavar='OPTIMIZER',
@@ -132,9 +132,11 @@ def get_args():
 
 def get_model(args):
     print(f"Creating model: {args.model}")
+    
+    # First, create model without pretrained weights
     model = create_model(
         args.model,
-        pretrained=False,
+        pretrained=False,  # Change to False to prevent automatic loading
         drop_path_rate=args.drop_path,
         drop_block_rate=None,
         use_shared_rel_pos_bias=args.rel_pos_bias,
@@ -142,6 +144,28 @@ def get_model(args):
         init_values=args.layer_scale_init_value,
         vocab_size=args.codebook_size
     )
+    
+    # Then load pretrained weights manually with filtering
+    if args.pretrained_model:
+        if args.pretrained_model.startswith('https'):
+            checkpoint = torch.hub.load_state_dict_from_url(
+                args.pretrained_model, map_location='cpu', check_hash=True)
+        else:
+            checkpoint = torch.load(args.pretrained_model, map_location='cpu')
+        
+        # Get the model weights
+        model_dict = checkpoint
+        if "model" in checkpoint:
+            model_dict = checkpoint["model"]
+        
+        # Remove problematic keys
+        if "logit_scale" in model_dict:
+            print("Removing logit_scale from pretrained weights")
+            del model_dict["logit_scale"]
+        
+        # Load the filtered state dict
+        msg = model.load_state_dict(model_dict, strict=False)
+        print(f"Pretrained model loaded: {msg}")
 
     return model
 
@@ -173,7 +197,7 @@ def main(args):
 
     # Create model
     model = get_model(args)
-    patch_size = model.student.patch_size
+    patch_size = model.patch_size
     print("Patch size = %s" % str(patch_size))
     args.window_size = (1, args.input_size // patch_size)
     args.patch_size = patch_size
@@ -213,7 +237,7 @@ def main(args):
     # Use DTU loader directly
     if args.use_dtu_loader:
         # Use the DTU data loader directly
-        train_dataset, test_dataset, val_dataset = utils.prepare_DTU_data("/work3/s224183/LaBraM_data")
+        train_dataset, test_dataset = utils.prepare_DTU_data("/work3/s224183/LaBraM_data")
         
         # Get channel names from the proper function
         ch_names = utils.get_channel_names()
@@ -222,21 +246,20 @@ def main(args):
         
         # Create the dataset lists needed for the training loop
         dataset_train_list = [train_dataset]
-        dataset_train_list.append(val_dataset)
-        dataset_val_list = [test_dataset] 
+        dataset_test_list = [test_dataset] 
     else:
         # Original ShockDataset loading logic for non-DTU data
         datasets_train = [["/work3/s224183/LaBraM_data/train"]]
         datasets_test = [["/work3/s224183/LaBraM_data/test"]]
-        datasets_val = [["/work3/s224183/LaBraM_data/val"]]
+
         time_window = [4]
     
         dataset_train_list, train_ch_names_list = utils.build_pretraining_dataset(
             datasets_train, time_window, stride_size=800, start_percentage=0, end_percentage=1
         )
         
-        dataset_val_list, val_ch_names_list = utils.build_pretraining_dataset(
-            datasets_val, time_window, stride_size=800, start_percentage=0, end_percentage=1
+        dataset_test_list, val_ch_names_list = utils.build_pretraining_dataset(
+            datasets_test, time_window, stride_size=800, start_percentage=0, end_percentage=1
         )
 
     if True:  # args.distributed:
@@ -253,13 +276,13 @@ def main(args):
             sampler_train_list.append(sampler_train)
         print("Sampler_train = %s" % str(sampler_train))
 
-        # Set up validation samplers
-        sampler_val_list = []
-        for dataset in dataset_val_list:
-            sampler_val = torch.utils.data.DistributedSampler(
+        # Set up test samplers
+        sampler_test_list = []
+        for dataset in dataset_test_list:
+            sampler_test = torch.utils.data.DistributedSampler(
                 dataset, num_replicas=num_tasks, rank=sampler_rank, shuffle=False
             )
-            sampler_val_list.append(sampler_val)
+            sampler_test_list.append(sampler_test)
     else:
         sampler_train = torch.utils.data.RandomSampler(dataset_train)
 
@@ -280,16 +303,16 @@ def main(args):
         )
         data_loader_train_list.append(data_loader_train)
 
-    data_loader_val_list = []
-    for dataset, sampler in zip(dataset_val_list, sampler_val_list):
-        data_loader_val = torch.utils.data.DataLoader(
+    data_loader_test_list = []
+    for dataset, sampler in zip(dataset_test_list, sampler_test_list):
+        data_loader_test = torch.utils.data.DataLoader(
             dataset, sampler=sampler,
             batch_size=args.batch_size,
             num_workers=args.num_workers,
             pin_memory=args.pin_mem,
             drop_last=False,
         )
-        data_loader_val_list.append(data_loader_val)
+        data_loader_test_list.append(data_loader_test)
 
     model.to(device)
     model_without_ddp = model

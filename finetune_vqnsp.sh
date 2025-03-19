@@ -55,9 +55,9 @@ python /zhome/ce/8/186807/Desktop/Labram/LaBraM-MMDTU/run_vqnsp_training.py \
     --weight_decay 1e-4 \
     --lr 5e-5 \
     --min_lr 1e-6 \
-    --warmup_epochs 5 \
-    --epochs 50 \
-    --save_ckpt_freq 10 \
+    --warmup_epochs 10 \
+    --epochs 100 \
+    --save_ckpt_freq 99 \
     --input_size 800 \
     --num_workers 4 \
     --seed 42 \

@@ -2,10 +2,6 @@
 # Large Brain Model for Learning Generic Representations with Tremendous EEG Data in BCI
 # By Wei-Bang Jiang
 # Based on BEiT-v2, timm, DeiT, and DINO code bases
-# https://github.com/microsoft/unilm/tree/master/beitv2
-# https://github.com/rwightman/pytorch-image-models/tree/master/timm
-# https://github.com/facebookresearch/deit/
-# https://github.com/facebookresearch/dino
 # ---------------------------------------------------------
 
 import argparse
@@ -69,7 +65,7 @@ def get_args():
     parser.add_argument('--drop_path', type=float, default=0.1, metavar='PCT',
                         help='Drop path rate (default: 0.1)')
 
-    parser.add_argument('--disable_eval_during_finetuning', action='store_true', default=False) ##normalt true
+    parser.add_argument('--disable_eval_during_finetuning', action='store_true', default=True)
 
     parser.add_argument('--model_ema', action='store_true', default=False)
     parser.add_argument('--model_ema_decay', type=float, default=0.9999, help='')
@@ -178,6 +174,13 @@ def get_args():
     parser.add_argument('--enable_deepspeed', action='store_true', default=False)
     parser.add_argument('--dataset', default='DTU', type=str,
                         help='dataset: TUAB | TUEV | DTU')
+    # DTU dataset specific parameters
+    parser.add_argument('--condition', default='feedback', type=str,
+                        help='Condition to classify: feedback, friendship, sologroup, gender')
+    parser.add_argument('--filter_feedback', type=str, default=None,
+                        help='Filter by feedback: feedback (with feedback only), nofeedback (without feedback only)')
+    parser.add_argument('--filter_non_participant', action='store_true', default=True,
+                        help='Filter out trials where participant is not involved')
 
     known_args, _ = parser.parse_known_args()
 
@@ -232,7 +235,28 @@ def get_dataset(args):
         metrics = ["accuracy", "balanced_accuracy", "cohen_kappa", "f1_weighted"]
         
     elif args.dataset == 'DTU':
-        train_dataset, test_dataset, val_dataset = utils.prepare_DTU_data("/work3/s224183/LaBraM_data")
+        # Set default condition if not specified
+        if not hasattr(args, 'condition'):
+            args.condition = "feedback"
+        condition = [args.condition]
+        
+        filter_feedback_only = None  # Default to no filtering
+        filter_non_feedback_only = None  # Default to no filtering
+        
+        if args.filter_feedback == 'feedback':
+            filter_feedback_only = True
+            filter_non_feedback_only = False
+        elif args.filter_feedback == 'nofeedback':
+            filter_feedback_only = False
+            filter_non_feedback_only = True
+            
+        train_dataset, test_dataset = utils.prepare_DTU_data(
+            "/work3/s224183/LaBraM_data", 
+            condition=condition,
+            filter_feedback_only=filter_feedback_only, 
+            filter_non_feedback_only=filter_non_feedback_only,
+            filter_non_participant=True
+        )
         # Channel names for DTU dataset
         channel_mapping = {
             'Fp1': 'EEG FP1-REF', 'AF7': 'EEG AF7-REF', 'AF3': 'EEG AF3-REF', 'F1': 'EEG F1-REF',
@@ -256,7 +280,7 @@ def get_dataset(args):
         args.nb_classes = 1  # Binary classification for friend status
         metrics = ["pr_auc", "roc_auc", "accuracy", "balanced_accuracy"]
 
-    return train_dataset, test_dataset, val_dataset, ch_names, metrics
+    return train_dataset, test_dataset, ch_names, metrics
 
 
 def main(args, ds_init):
@@ -273,18 +297,13 @@ def main(args, ds_init):
     seed = args.seed + utils.get_rank()
     torch.manual_seed(seed)
     np.random.seed(seed)
-    # random.seed(seed)
 
     cudnn.benchmark = True
 
-    # dataset_train, dataset_test, dataset_val: follows the standard format of torch.utils.data.Dataset.
+    # dataset_train, dataset_test: follows the standard format of torch.utils.data.Dataset.
     # ch_names: list of strings, channel names of the dataset. It should be in capital letters.
     # metrics: list of strings, the metrics you want to use. We utilize PyHealth to implement it.
-    dataset_train, dataset_test, dataset_val, ch_names, metrics = get_dataset(args)
-
-    if args.disable_eval_during_finetuning:
-        dataset_val = None
-        dataset_test = None
+    dataset_train, dataset_test, ch_names, metrics = get_dataset(args)
 
     if True:  # args.distributed:
         num_tasks = utils.get_world_size()
@@ -293,25 +312,16 @@ def main(args, ds_init):
             dataset_train, num_replicas=num_tasks, rank=global_rank, shuffle=True
         )
         print("Sampler_train = %s" % str(sampler_train))
-        if args.dist_eval:
-            if len(dataset_val) % num_tasks != 0:
-                print('Warning: Enabling distributed evaluation with an eval dataset not divisible by process number. '
-                      'This will slightly alter validation results as extra duplicate entries are added to achieve '
-                      'equal num of samples per-process.')
-            sampler_val = torch.utils.data.DistributedSampler(
-                dataset_val, num_replicas=num_tasks, rank=global_rank, shuffle=False)
-            if type(dataset_test) == list:
-                sampler_test = [torch.utils.data.DistributedSampler(
-                    dataset, num_replicas=num_tasks, rank=global_rank, shuffle=False) for dataset in dataset_test]
-            else:
-                sampler_test = torch.utils.data.DistributedSampler(
-                    dataset_test, num_replicas=num_tasks, rank=global_rank, shuffle=False)
+
+        if type(dataset_test) == list:
+            sampler_test = [torch.utils.data.DistributedSampler(
+                dataset, num_replicas=num_tasks, rank=global_rank, shuffle=False) for dataset in dataset_test]
         else:
-            sampler_val = torch.utils.data.SequentialSampler(dataset_val)
-            sampler_test = torch.utils.data.SequentialSampler(dataset_test)
+            sampler_test = torch.utils.data.DistributedSampler(
+                dataset_test, num_replicas=num_tasks, rank=global_rank, shuffle=False)
     else:
         sampler_train = torch.utils.data.RandomSampler(dataset_train)
-        sampler_val = torch.utils.data.SequentialSampler(dataset_val)
+        sampler_test = torch.utils.data.SequentialSampler(dataset_test)
 
     if global_rank == 0 and args.log_dir is not None:
         os.makedirs(args.log_dir, exist_ok=True)
@@ -327,33 +337,22 @@ def main(args, ds_init):
         drop_last=True,
     )
 
-    if dataset_val is not None:
-        data_loader_val = torch.utils.data.DataLoader(
-            dataset_val, sampler=sampler_val,
+    if type(dataset_test) == list:
+        data_loader_test = [torch.utils.data.DataLoader(
+            dataset, sampler=sampler,
+            batch_size=int(1.5 * args.batch_size),
+            num_workers=args.num_workers,
+            pin_memory=args.pin_mem,
+            drop_last=False
+        ) for dataset, sampler in zip(dataset_test, sampler_test)]
+    else:
+        data_loader_test = torch.utils.data.DataLoader(
+            dataset_test, sampler=sampler_test,
             batch_size=int(1.5 * args.batch_size),
             num_workers=args.num_workers,
             pin_memory=args.pin_mem,
             drop_last=False
         )
-        if type(dataset_test) == list:
-            data_loader_test = [torch.utils.data.DataLoader(
-                dataset, sampler=sampler,
-                batch_size=int(1.5 * args.batch_size),
-                num_workers=args.num_workers,
-                pin_memory=args.pin_mem,
-                drop_last=False
-            ) for dataset, sampler in zip(dataset_test, sampler_test)]
-        else:
-            data_loader_test = torch.utils.data.DataLoader(
-                dataset_test, sampler=sampler_test,
-                batch_size=int(1.5 * args.batch_size),
-                num_workers=args.num_workers,
-                pin_memory=args.pin_mem,
-                drop_last=False
-            )
-    else:
-        data_loader_val = None
-        data_loader_test = None
 
     model = get_models(args)
 
@@ -495,15 +494,12 @@ def main(args, ds_init):
     if args.eval:
         balanced_accuracy = []
         accuracy = []
-        for data_loader in data_loader_test:
+        for data_loader in (data_loader_test if isinstance(data_loader_test, list) else [data_loader_test]):
             test_stats = evaluate(data_loader, model, device, header='Test:', ch_names=ch_names, metrics=metrics, is_binary=(args.nb_classes == 1))
             accuracy.append(test_stats['accuracy'])
             balanced_accuracy.append(test_stats['balanced_accuracy'])
         print(f"======Accuracy: {np.mean(accuracy)} {np.std(accuracy)}, balanced accuracy: {np.mean(balanced_accuracy)} {np.std(balanced_accuracy)}")
         exit(0)
-
-        # Choose appropriate criterion based on task type
-
 
     print(f"Start training for {args.epochs} epochs")
     start_time = time.time()
@@ -528,87 +524,62 @@ def main(args, ds_init):
             utils.save_model(
                 args=args, model=model, model_without_ddp=model_without_ddp, optimizer=optimizer,
                 loss_scaler=loss_scaler, epoch=epoch, model_ema=model_ema, save_ckpt_freq=args.save_ckpt_freq)
+        
+        # Test on the test set
+        if args.regression:
+            test_stats = evaluate(data_loader_test, model, device, header='Test:', 
+                                ch_names=ch_names, metrics=['mse', 'r2'], 
+                                is_binary=args.nb_classes == 1, is_regression=True)
+            print(f"MSE of the network on the {len(dataset_test)} test EEG: {test_stats.get('mse', 0):.4f}")
+            print(f"R² of the network on the {len(dataset_test)} test EEG: {test_stats.get('r2', 0):.4f}")
             
-        if data_loader_val is not None:
-            if args.regression:
-                # Use regression evaluation
-                val_stats = evaluate(data_loader_val, model, device, header='Val:', 
-                                    ch_names=ch_names, metrics=['mse', 'r2'], 
-                                    is_binary=args.nb_classes == 1, is_regression=True)
-                print(f"MSE of the network on the {len(dataset_val)} val EEG: {val_stats.get('mse', 0):.4f}")
-                print(f"R² of the network on the {len(dataset_val)} val EEG: {val_stats.get('r2', 0):.4f}")
-                
-                test_stats = evaluate(data_loader_test, model, device, header='Test:', 
-                                    ch_names=ch_names, metrics=['mse', 'r2'], 
-                                    is_binary=args.nb_classes == 1, is_regression=True)
-                print(f"MSE of the network on the {len(dataset_test)} test EEG: {test_stats.get('mse', 0):.4f}")
-                print(f"R² of the network on the {len(dataset_test)} test EEG: {test_stats.get('r2', 0):.4f}")
-                
-                # For regression, use R² as the monitoring metric
-                if 'r2' in val_stats and (max_accuracy < val_stats["r2"]):
-                    max_accuracy = val_stats["r2"]
-                    if args.output_dir and args.save_ckpt:
-                        utils.save_model(
-                            args=args, model=model, model_without_ddp=model_without_ddp, optimizer=optimizer,
-                            loss_scaler=loss_scaler, epoch="best", model_ema=model_ema)
-                    max_accuracy_test = test_stats.get("r2", 0)
-            else:
-                # Use the original classification evaluation
-                val_stats = evaluate(data_loader_val, model, device, header='Val:', 
-                                    ch_names=ch_names, metrics=metrics, 
-                                    is_binary=args.nb_classes == 1, is_regression=False)
-                print(f"Accuracy of the network on the {len(dataset_val)} val EEG: {val_stats['accuracy']:.2f}%")
-                
-                test_stats = evaluate(data_loader_test, model, device, header='Test:', 
-                                    ch_names=ch_names, metrics=metrics, 
-                                    is_binary=args.nb_classes == 1, is_regression=False)
-                print(f"Accuracy of the network on the {len(dataset_test)} test EEG: {test_stats['accuracy']:.2f}%")
-                
-                # For classification, continue using accuracy as the monitoring metric
-                if max_accuracy < val_stats["accuracy"]:
-                    max_accuracy = val_stats["accuracy"]
-                    if args.output_dir and args.save_ckpt:
-                        utils.save_model(
-                            args=args, model=model, model_without_ddp=model_without_ddp, optimizer=optimizer,
-                            loss_scaler=loss_scaler, epoch="best", model_ema=model_ema)
-                    max_accuracy_test = test_stats["accuracy"]
+            # For regression, use R² as the monitoring metric
+            if max_accuracy < test_stats.get("r2", 0):
+                max_accuracy = test_stats.get("r2", 0)
+                if args.output_dir and args.save_ckpt:
+                    utils.save_model(
+                        args=args, model=model, model_without_ddp=model_without_ddp, optimizer=optimizer,
+                        loss_scaler=loss_scaler, epoch="best", model_ema=model_ema)
+                max_accuracy_test = test_stats.get("r2", 0)
+        else:
+            # Use classification evaluation on the test set
+            test_stats = evaluate(data_loader_test, model, device, header='Test:', 
+                                ch_names=ch_names, metrics=metrics, 
+                                is_binary=args.nb_classes == 1, is_regression=False)
+            print(f"Accuracy of the network on the {len(dataset_test)} test EEG: {test_stats['accuracy']:.2f}%")
+            
+            # For classification, continue using accuracy as the monitoring metric
+            if max_accuracy < test_stats["accuracy"]:
+                max_accuracy = test_stats["accuracy"]
+                if args.output_dir and args.save_ckpt:
+                    utils.save_model(
+                        args=args, model=model, model_without_ddp=model_without_ddp, optimizer=optimizer,
+                        loss_scaler=loss_scaler, epoch="best", model_ema=model_ema)
+                max_accuracy_test = test_stats["accuracy"]
 
-            print(f'Max accuracy val: {max_accuracy:.2f}%, max accuracy test: {max_accuracy_test:.2f}%')
+            print(f'Max accuracy test: {max_accuracy_test:.2f}%')
 
-            if log_writer is not None:
-                for key, value in val_stats.items():
-                    if key == 'accuracy':
-                        log_writer.update(accuracy=value, head="val", step=epoch)
-                    elif key == 'balanced_accuracy':
-                        log_writer.update(balanced_accuracy=value, head="val", step=epoch)
-                    elif key == 'f1_weighted':
-                        log_writer.update(f1_weighted=value, head="val", step=epoch)
-                    elif key == 'pr_auc':
-                        log_writer.update(pr_auc=value, head="val", step=epoch)
-                    elif key == 'roc_auc':
-                        log_writer.update(roc_auc=value, head="val", step=epoch)
-                    elif key == 'cohen_kappa':
-                        log_writer.update(cohen_kappa=value, head="val", step=epoch)
-                    elif key == 'loss':
-                        log_writer.update(loss=value, head="val", step=epoch)
-                for key, value in test_stats.items():
-                    if key == 'accuracy':
-                        log_writer.update(accuracy=value, head="test", step=epoch)
-                    elif key == 'balanced_accuracy':
-                        log_writer.update(balanced_accuracy=value, head="test", step=epoch)
-                    elif key == 'f1_weighted':
-                        log_writer.update(f1_weighted=value, head="test", step=epoch)
-                    elif key == 'pr_auc':
-                        log_writer.update(pr_auc=value, head="test", step=epoch)
-                    elif key == 'roc_auc':
-                        log_writer.update(roc_auc=value, head="test", step=epoch)
-                    elif key == 'cohen_kappa':
-                        log_writer.update(cohen_kappa=value, head="test", step=epoch)
-                    elif key == 'loss':
-                        log_writer.update(loss=value, head="test", step=epoch)
-                
+        if log_writer is not None:
+            log_writer.set_step((epoch + 1) * num_training_steps_per_epoch * args.update_freq)
+            
+            # Log test metrics
+            for key, value in test_stats.items():
+                if key == 'accuracy':
+                    log_writer.update(accuracy=value, head="test", step=epoch)
+                elif key == 'balanced_accuracy':
+                    log_writer.update(balanced_accuracy=value, head="test", step=epoch)
+                elif key == 'f1_weighted':
+                    log_writer.update(f1_weighted=value, head="test", step=epoch)
+                elif key == 'pr_auc':
+                    log_writer.update(pr_auc=value, head="test", step=epoch)
+                elif key == 'roc_auc':
+                    log_writer.update(roc_auc=value, head="test", step=epoch)
+                elif key == 'cohen_kappa':
+                    log_writer.update(cohen_kappa=value, head="test", step=epoch)
+                elif key == 'loss':
+                    log_writer.update(loss=value, head="test", step=epoch)
+            
             log_stats = {**{f'train_{k}': v for k, v in train_stats.items()},
-                         **{f'val_{k}': v for k, v in val_stats.items()},
                          **{f'test_{k}': v for k, v in test_stats.items()},
                          'epoch': epoch,
                          'n_parameters': n_parameters}
@@ -617,7 +588,6 @@ def main(args, ds_init):
                          'epoch': epoch,
                          'n_parameters': n_parameters}
         
-
         if args.output_dir and utils.is_main_process():
             if log_writer is not None:
                 log_writer.flush()

@@ -245,6 +245,24 @@ def process_file(fif_file, participant_data, behavior_path, output_dir):
         print(f"Error processing {fif_file}: {e}")
         return 0
     
+def parse_condition(condition):
+    """
+    Parse condition code to determine trial type and feedback status.
+    
+    Args:
+        condition: Condition string from the EEG file (e.g., 'T12P', 'T13Pn', etc.)
+    
+    Returns:
+        tuple: (condition_type, has_feedback)
+            - condition_type: String describing which participants are involved
+            - has_feedback: Boolean indicating if this condition has feedback
+    """
+    # Determine has_feedback status - if 'Pn' is in the condition, there's no feedback
+    has_feedback = 'Pn' not in condition
+    condition_type = condition
+        
+    return condition_type, has_feedback
+
 def parse_participant(condition):
     """
     Parse condition code to determine which participants are involved.
@@ -291,47 +309,74 @@ def is_participant_involved(condition, participant_num):
 
 def split_data_by_participant(processed_dir, output_dir):
     """
-    Split processed data into train, validation, and test sets by participant.
+    Split processed data into train and test sets by participant.
+    Test set will contain 18 participants (6 complete triads), train set will have the rest.
+    Participants in the same triad are kept together.
     
     Args:
         processed_dir: Directory containing processed data files
-        output_dir: Directory to save train/val/test files
+        output_dir: Directory to save train/test files
     """
     # Create output directories
     train_dir = os.path.join(output_dir, "train")
-    val_dir = os.path.join(output_dir, "val")
     test_dir = os.path.join(output_dir, "test")
     
     os.makedirs(train_dir, exist_ok=True)
-    os.makedirs(val_dir, exist_ok=True)
     os.makedirs(test_dir, exist_ok=True)
     
     # Get all pickle files
     all_files = [f for f in os.listdir(processed_dir) if f.endswith('.pkl')]
-    # Extract unique participant IDs
+    
+    # Extract unique participant IDs and group by triad
     participant_ids = set()
+    triads = {}
+    
     for file in all_files:
         participant_id = file.split('_')[0]
         participant_ids.add(participant_id)
+        
+        # Extract triad number (first 3 digits of participant ID)
+        if len(participant_id) >= 3:
+            triad_id = participant_id[:3]
+            if triad_id not in triads:
+                triads[triad_id] = set()
+            triads[triad_id].add(participant_id)
     
-    # Sort for reproducibility
-    participant_ids = sorted(list(participant_ids))
+    # Filter out incomplete triads (should have 3 participants each)
+    complete_triads = {triad_id: members for triad_id, members in triads.items() if len(members) == 3}
+    
+    print(f"Found {len(complete_triads)} complete triads out of {len(triads)} total triads")
     
     # Set seed for reproducibility
     np.random.seed(42)
-    # Shuffle but in a reproducible way
-    indices = np.arange(len(participant_ids))
-    np.random.shuffle(indices)
-    shuffled_participants = [participant_ids[i] for i in indices]
     
-    # Split participants into train/val/test
-    train_participants = shuffled_participants[:int(len(shuffled_participants) * 0.7)]
-    val_participants = shuffled_participants[int(len(shuffled_participants) * 0.7):int(len(shuffled_participants) * 0.85)]
-    test_participants = shuffled_participants[int(len(shuffled_participants) * 0.85):]
+    # Select 6 complete triads for the test set (6 triads × 3 participants = 18 participants)
+    triad_ids = list(complete_triads.keys())
+    np.random.shuffle(triad_ids)
+    
+    # Select first 6 triads for test, rest for training
+    test_triads = triad_ids[:6]
+    train_triads = triad_ids[6:]
+    
+    # Flatten the lists to get participant IDs
+    test_participants = []
+    for triad_id in test_triads:
+        test_participants.extend(list(complete_triads[triad_id]))
+    
+    train_participants = []
+    for triad_id in train_triads:
+        train_participants.extend(list(complete_triads[triad_id]))
+    
+    # Add participants from incomplete triads to train set
+    for triad_id, members in triads.items():
+        if triad_id not in complete_triads:
+            train_participants.extend(list(members))
+    
+    # Verify we have the correct number of participants in the test set
+    assert len(test_participants) == 18, f"Expected 18 test participants, got {len(test_participants)}"
     
     print(f"Train participants: {len(train_participants)} participants")
-    print(f"Val participants: {len(val_participants)} participants")
-    print(f"Test participants: {len(test_participants)} participants")
+    print(f"Test participants: {len(test_participants)} participants (6 complete triads)")
     
     # Group files by participant for more efficient processing
     files_by_participant = {}
@@ -342,19 +387,16 @@ def split_data_by_participant(processed_dir, output_dir):
         files_by_participant[participant_id].append(file)
     
     # Process each participant separately to reduce memory usage
-    train_count, val_count, test_count = 0, 0, 0
+    train_count, test_count = 0, 0
     
     for participant_id, files in files_by_participant.items():
         # Determine which set this participant belongs to
-        if participant_id in train_participants:
-            target_dir = train_dir
-            train_count += len(files)
-        elif participant_id in val_participants:
-            target_dir = val_dir
-            val_count += len(files)
-        else:
+        if participant_id in test_participants:
             target_dir = test_dir
             test_count += len(files)
+        else:
+            target_dir = train_dir
+            train_count += len(files)
         
         # Copy each file for this participant
         for file in files:
@@ -366,25 +408,24 @@ def split_data_by_participant(processed_dir, output_dir):
                 data = pickle.load(f_src)
                 with open(dst_path, "wb") as f_dst:
                     pickle.dump(data, f_dst)
-            
-            # # Delete source file after successful copy to save disk space
-            # os.remove(src_path)
     
     # Print summary
     print(f"Split data into:")
     print(f"  Train: {train_count} samples from {len(train_participants)} participants")
-    print(f"  Validation: {val_count} samples from {len(val_participants)} participants")
     print(f"  Test: {test_count} samples from {len(test_participants)} participants")
     
     # Generate class distribution statistics
     train_statistics = get_class_distribution(train_dir)
-    val_statistics = get_class_distribution(val_dir)
     test_statistics = get_class_distribution(test_dir)
     
     print("\nClass distribution (feedback vs. no feedback):")
     print(f"  Train: {train_statistics}")
-    print(f"  Validation: {val_statistics}")
     print(f"  Test: {test_statistics}")
+    
+    # Print test triads for verification
+    print("\nTest triads:")
+    for triad_id in test_triads:
+        print(f"  Triad {triad_id}: {', '.join(sorted(complete_triads[triad_id]))}")
 
 def get_class_distribution(directory):
     """
