@@ -43,13 +43,13 @@ conda activate labram
 
 # Run the training with full output logging
 python run_class_finetuning.py \
-    --output_dir ./checkpoints/finetune_dtu_base/friendship_e6 \
+    --output_dir ./checkpoints/pretrain_dtu_labram/sologroup_feedback \
     --log_dir ./log/finetune_dtu_base/gender \
     --model labram_base_patch200_200 \
-    --finetune /zhome/ce/8/186807/Desktop/Labram/LaBraM-MMDTU/checkpoints/finetune_dtu_labram/checkpoint-49.pth \
-    --weight_decay 0.1 \
+    --finetune /zhome/ce/8/186807/Desktop/Labram/LaBraM-MMDTU/checkpoints/pretrain_dtu_labram/checkpoint-49.pth \
+    --weight_decay 0.05 \
     --batch_size 64 \
-    --lr e-6 \
+    --lr 5e-4 \
     --update_freq 1 \
     --warmup_epochs 5 \
     --epochs 50 \
@@ -61,6 +61,5 @@ python run_class_finetuning.py \
     --dataset DTU \
     --disable_qkv_bias \
     --seed 0 \
-    --condition friendship \
-    --filter_feedback feedback \
-    --clip_grad 1
+    --condition sologroup \
+    --filter_feedback feedback

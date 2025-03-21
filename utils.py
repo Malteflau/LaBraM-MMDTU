@@ -890,19 +890,30 @@ class DTULoader(torch.utils.data.Dataset):
             # Default fallback to feedback label
             y = sample["y"]
 
-        # If X has shape [channels, patches, time_per_patch]
-        if X.ndim == 3:
-            channels, patches, time_per_patch = X.shape
-            # Reshape to [channels, total_time_points]
-            X = X.reshape(channels, patches * time_per_patch)
-            
-        # Convert to tensor - ensure we have shape [channels, time_points]
-        X_tensor = torch.FloatTensor(X)
+        channels, patches, time_per_patch = X.shape
+
+        # for computing power spectrum  
+        X_power = np.zeros((channels, patches, time_per_patch))    
+        for ch in range(channels):
+            for p in range(patches):
+                time_series = X[ch, p, :]
+                windowed_data = time_series * np.hanning(time_per_patch)
+                fft_result = np.fft.fft(windowed_data, n=time_per_patch)
+                power = np.abs(fft_result)**2
+                X_power[ch, p, :] = power
         
-        # Create target tensor with correct shape - scalar instead of extra dimensions
+        X_tensor = torch.FloatTensor(X_power.reshape(channels, patches * time_per_patch))
+
+        
+        X_raw_reshaped = X.reshape(channels, patches * time_per_patch)
+        X_raw_tensor = torch.FloatTensor(X_raw_reshaped)
+        combined_tensor = torch.cat([X_raw_tensor, X_tensor], dim=1)
+        combined_tensor = torch.FloatTensor(combined_tensor)
+
+        # X_tensor = torch.FloatTensor(X.reshape(channels,patches*time_per_patch))
         y_tensor = torch.FloatTensor([y]).squeeze()  # This makes it [1] instead of [1,1]
 
-        return X_tensor, y_tensor
+        return combined_tensor , y_tensor
     
     def _is_solo_condition(self, condition_str, participant_num):
         """Helper method to determine if a trial is solo for this participant"""
@@ -958,35 +969,35 @@ def prepare_DTU_data(root, condition=["feedback"], filter_feedback_only=None,
         filter_non_participant=filter_non_participant
     )
     
-    # Print class distribution statistics
-    print("Dataset class distribution after filtering:")
+    # # Print class distribution statistics
+    # print("Dataset class distribution after filtering:")
     
-    # For training set
-    train_labels = []
-    for i in range(len(train_dataset)):
-        _, y = train_dataset[i]
-        if hasattr(y, 'item'):
-            train_labels.append(y.item())
-        else:
-            train_labels.append(int(y))
+    # # For training set
+    # train_labels = []
+    # for i in range(len(train_dataset)):
+    #     _, y = train_dataset[i]
+    #     if hasattr(y, 'item'):
+    #         train_labels.append(y.item())
+    #     else:
+    #         train_labels.append(int(y))
     
-    train_counts = np.bincount(train_labels)
-    train_total = len(train_labels)
-    print(f"Training set: Class 0: {train_counts[0]} ({train_counts[0]/train_total:.2%}), " 
-          f"Class 1: {train_counts[1]} ({train_counts[1]/train_total:.2%})")
+    # train_counts = np.bincount(train_labels)
+    # train_total = len(train_labels)
+    # print(f"Training set: Class 0: {train_counts[0]} ({train_counts[0]/train_total:.2%}), " 
+    #       f"Class 1: {train_counts[1]} ({train_counts[1]/train_total:.2%})")
     
-    test_labels = []
-    for i in range(len(test_dataset)):
-        _, y = test_dataset[i]
-        if hasattr(y, 'item'):
-            test_labels.append(y.item())
-        else:
-            test_labels.append(int(y))
+    # test_labels = []
+    # for i in range(len(test_dataset)):
+    #     _, y = test_dataset[i]
+    #     if hasattr(y, 'item'):
+    #         test_labels.append(y.item())
+    #     else:
+    #         test_labels.append(int(y))
     
-    test_counts = np.bincount(test_labels)
-    test_total = len(test_labels)
-    print(f"Training set: Class 0: {test_counts[0]} ({test_counts[0]/test_total:.2%}), " 
-          f"Class 1: {test_counts[1]} ({test_counts[1]/test_total:.2%})")
+    # test_counts = np.bincount(test_labels)
+    # test_total = len(test_labels)
+    # print(f"Training set: Class 0: {test_counts[0]} ({test_counts[0]/test_total:.2%}), " 
+    #       f"Class 1: {test_counts[1]} ({test_counts[1]/test_total:.2%})")
     
     return train_dataset, test_dataset
 

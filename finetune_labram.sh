@@ -43,16 +43,14 @@ conda activate labram
 
 # Run the training with full output logging - using absolute paths
 python /zhome/ce/8/186807/Desktop/Labram/LaBraM-MMDTU/run_labram_finetuning.py \
-    --output_dir /zhome/ce/8/186807/Desktop/Labram/LaBraM-MMDTU/checkpoints/finetune_dtu_labram \
+    --output_dir /zhome/ce/8/186807/Desktop/Labram/LaBraM-MMDTU/checkpoints/power_spec_real/labram \
     --log_dir /zhome/ce/8/186807/Desktop/Labram/LaBraM-MMDTU/log/finetune_dtu_labram \
     --model labram_base_patch200_1600_8k_vocab \
     --tokenizer_model vqnsp_encoder_base_decoder_3x200x12 \
-    --tokenizer_weight ./checkpoints/vqnsp.pth \
-    --pretrained_model /zhome/ce/8/186807/Desktop/Labram/LaBraM-MMDTU/checkpoints/labram-base.pth \
+    --tokenizer_weight /zhome/ce/8/186807/Desktop/Labram/LaBraM-MMDTU/checkpoints/dtu_vqnsp_powerspectrum/checkpoint-98.pth\
     --batch_size 64 \
-    --lr 5e-5 \
-    --min_lr 1e-6 \
-    --warmup_epochs 10 \
+    --lr 5e-4 \
+    --warmup_epochs 5 \
     --clip_grad 3.0 \
     --drop_path 0.1 \
     --layer_scale_init_value 0.1 \

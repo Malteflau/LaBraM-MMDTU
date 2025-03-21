@@ -3,7 +3,7 @@
 # -- our name ---
 #BSUB -J VQNSP_DTU_100epoch
 # -- choose queue --
-#BSUB -q gpuv100
+#BSUB -q gpua100
 # -- specify that we need 1GB of memory per core/slot --
 #BSUB -R "rusage[mem=1GB]"
 # -- Notify me by email when execution begins --
@@ -43,22 +43,19 @@ conda activate labram
 
 # Run the training with full output logging - using absolute paths
 python /zhome/ce/8/186807/Desktop/Labram/LaBraM-MMDTU/run_vqnsp_training.py \
-    --output_dir /zhome/ce/8/186807/Desktop/Labram/LaBraM-MMDTU/checkpoints/finetune_dtu_vqnsp \
+    --output_dir /zhome/ce/8/186807/Desktop/Labram/LaBraM-MMDTU/checkpoints/dtu_vqnsp_r \
     --log_dir /zhome/ce/8/186807/Desktop/Labram/LaBraM-MMDTU/log/finetune_dtu_vqnsp \
     --model vqnsp_encoder_base_decoder_3x200x12 \
-    --resume /zhome/ce/8/186807/Desktop/Labram/LaBraM-MMDTU/checkpoints/vqnsp.pth \
     --codebook_n_emd 8192 \
     --codebook_emd_dim 64 \
     --batch_size 64 \
     --opt adamw \
     --opt_betas 0.9 0.99 \
+    --quantize_kmeans_init \
     --weight_decay 1e-4 \
-    --lr 5e-5 \
-    --min_lr 1e-6 \
     --warmup_epochs 10 \
     --epochs 100 \
     --save_ckpt_freq 99 \
-    --input_size 800 \
     --num_workers 4 \
     --seed 42 \
     --use_dtu_loader
