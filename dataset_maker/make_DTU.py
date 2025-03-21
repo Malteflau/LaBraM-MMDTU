@@ -144,7 +144,6 @@ def process_file(fif_file, participant_data, behavior_path, output_dir):
             t4_idx = np.where(times <= 4)[0][-1]  # Last index where time <= 4
 
             # Calculate exactly how many points we should have after resampling
-            orig_fs = sfreq  # Original frequency (should be 500 Hz)
             target_fs = 200  # Target frequency for LaBraM
             time_duration = 4.0  # Exactly 4 seconds
 
