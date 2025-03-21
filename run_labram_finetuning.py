@@ -7,7 +7,7 @@
 # https://github.com/facebookresearch/deit/
 # https://github.com/facebookresearch/dino
 # ---------------------------------------------------------
-
+import pandas as pd
 import argparse
 import datetime
 import numpy as np
@@ -16,7 +16,6 @@ import torch
 import torch.backends.cudnn as cudnn
 import json
 import os
-from utils import get_channel_names
 
 from pathlib import Path
 
@@ -29,26 +28,31 @@ import utils
 import modeling_pretrain
 import modeling_vqnsp
 
+
 def get_args():
-    parser = argparse.ArgumentParser('LaBraM pre-training script', add_help=False)
+    parser = argparse.ArgumentParser('LaBraM fine-tuning script', add_help=False)
     parser.add_argument('--batch_size', default=64, type=int)
-    parser.add_argument('--epochs', default=300, type=int)
-    parser.add_argument('--save_ckpt_freq', default=20, type=int)
+    parser.add_argument('--epochs', default=30, type=int, help='Fewer epochs for fine-tuning')
+    parser.add_argument('--save_ckpt_freq', default=5, type=int)
 
     # tokenizer settings
-    parser.add_argument("--tokenizer_weight", type=str)
+    parser.add_argument("--tokenizer_weight", type=str, default='/zhome/ce/8/186807/Desktop/Labram/LaBraM-MMDTU/checkpoints/vqnsp.pth', 
+                        help="Path to pre-trained tokenizer weights")
     parser.add_argument("--tokenizer_model", type=str, default="vqnsp_encoder_base_decoder_3x200x12")
     
-    # Model parameters
+    # Model parameters for pre-trained model
+    parser.add_argument('--pretrained_model', type=str, default='/zhome/ce/8/186807/Desktop/Labram/LaBraM-MMDTU/checkpoints/labram-base.pth',
+                    help='Path to pre-trained LaBraM model weights')
     parser.add_argument('--model', default='labram_base_patch200_1600_8k_vocab', type=str, metavar='MODEL',
                         help='Name of model to train')
     parser.add_argument('--rel_pos_bias', action='store_true')
-    parser.add_argument('--disable_rel_pos_bias', action='store_true', dest='rel_pos_bias')
+    parser.add_argument('--disable_rel_pos_bias', action='store_false', dest='rel_pos_bias')
     parser.set_defaults(rel_pos_bias=False)
     parser.add_argument('--abs_pos_emb', action='store_true')
     parser.set_defaults(abs_pos_emb=True)
     parser.add_argument('--layer_scale_init_value', default=0.1, type=float, 
                         help="0.1 for base, 1e-5 for large. set 0 to disable layer scale")
+    parser.add_argument('--model_key', default='model|module', type=str)
 
     parser.add_argument('--input_size', default=1600, type=int,
                         help='EEG input size for backbone')
@@ -77,12 +81,12 @@ def get_args():
         weight decay. We use a cosine schedule for WD. 
         (Set the same value with args.weight_decay to keep weight decay no change)""")
 
-    parser.add_argument('--lr', type=float, default=5e-4, metavar='LR',
-                        help='learning rate (default: 5e-4)')
+    parser.add_argument('--lr', type=float, default=1e-5, metavar='LR',
+                        help='learning rate (default: 1e-5)')
     parser.add_argument('--warmup_lr', type=float, default=1e-6, metavar='LR',
                         help='warmup learning rate (default: 1e-6)')
-    parser.add_argument('--min_lr', type=float, default=1e-5, metavar='LR',
-                        help='lower lr bound for cyclic schedulers that hit 0 (1e-5)')
+    parser.add_argument('--min_lr', type=float, default=1e-6, metavar='LR',
+                        help='lower lr bound for cyclic schedulers that hit 0 (1e-6)')
 
     parser.add_argument('--warmup_epochs', type=int, default=5, metavar='N',
                         help='epochs to warmup LR, if scheduler supports')
@@ -103,7 +107,7 @@ def get_args():
 
     parser.add_argument('--start_epoch', default=0, type=int, metavar='N',
                         help='start epoch')    
-    parser.add_argument('--num_workers', default=10, type=int)
+    parser.add_argument('--num_workers', default=4, type=int)
     parser.add_argument('--pin_mem', action='store_true',
                         help='Pin CPU memory in DataLoader for more efficient (sometimes) transfer to GPU.')
     parser.add_argument('--no_pin_mem', action='store_false', dest='pin_mem',
@@ -118,6 +122,10 @@ def get_args():
     parser.add_argument('--dist_url', default='env://', help='url used to set up distributed training')
 
     parser.add_argument('--gradient_accumulation_steps', default=1, type=int)
+    
+    # Dataset parameters
+    parser.add_argument('--use_dtu_loader', action='store_true',
+                    help='Use the DTU data loader instead of ShockDataset')
 
     return parser.parse_args()
 
@@ -160,23 +168,76 @@ def main(args):
     seed = args.seed + utils.get_rank()
     torch.manual_seed(seed)
     np.random.seed(seed)
-    # random.seed(seed)
 
     cudnn.benchmark = True
 
+    # Create model
     model = get_model(args)
-    patch_size = model.patch_size
+    patch_size = model.student.patch_size
     print("Patch size = %s" % str(patch_size))
     args.window_size = (1, args.input_size // patch_size)
     args.patch_size = patch_size
 
-    dataset_train = [["filepath"],["filepath"]]
-    time_window = [4]
-    #or 
-    time_window = [8]
-    dataset_train_list, train_ch_names_list = utils.build_pretraining_dataset(datasets_train, time_window, stride_size=200)
+    # Load pretrained model
+    if args.pretrained_model:
+        if args.pretrained_model.startswith('https'):
+            checkpoint = torch.hub.load_state_dict_from_url(
+                args.pretrained_model, map_location='cpu', check_hash=True)
+        else:
+            checkpoint = torch.load(args.pretrained_model, map_location='cpu')
 
+        print("Load ckpt from %s" % args.pretrained_model)
+        checkpoint_model = None
+        for model_key in args.model_key.split('|'):
+            if model_key in checkpoint:
+                checkpoint_model = checkpoint[model_key]
+                print("Load state_dict by model_key = %s" % model_key)
+                break
+        if checkpoint_model is None:
+            checkpoint_model = checkpoint
+            
+        # Remove any incompatible keys
+        state_dict = model.state_dict()
+        for k in list(checkpoint_model.keys()):
+            if k not in state_dict or checkpoint_model[k].shape != state_dict[k].shape:
+                print(f"Removing key {k} from pretrained checkpoint")
+                del checkpoint_model[k]
+                
+        # Load the checkpoint
+        model.load_state_dict(checkpoint_model, strict=False)
+        print("Pretrained model loaded successfully!")
+
+    # prepare visual tokenizer
     vqnsp = get_visual_tokenizer(args).to(device)
+
+    # Use DTU loader directly
+    if args.use_dtu_loader:
+        # Use the DTU data loader directly
+        train_dataset, test_dataset, val_dataset = utils.prepare_DTU_data("/work3/s224183/LaBraM_data")
+        
+        # Get channel names from the proper function
+        ch_names = utils.get_channel_names()
+        train_ch_names_list = ch_names
+        val_ch_names_list = ch_names
+        
+        # Create the dataset lists needed for the training loop
+        dataset_train_list = [train_dataset]
+        dataset_train_list.append(val_dataset)
+        dataset_val_list = [test_dataset] 
+    else:
+        # Original ShockDataset loading logic for non-DTU data
+        datasets_train = [["/work3/s224183/LaBraM_data/train"]]
+        datasets_test = [["/work3/s224183/LaBraM_data/test"]]
+        datasets_val = [["/work3/s224183/LaBraM_data/val"]]
+        time_window = [4]
+    
+        dataset_train_list, train_ch_names_list = utils.build_pretraining_dataset(
+            datasets_train, time_window, stride_size=800, start_percentage=0, end_percentage=1
+        )
+        
+        dataset_val_list, val_ch_names_list = utils.build_pretraining_dataset(
+            datasets_val, time_window, stride_size=800, start_percentage=0, end_percentage=1
+        )
 
     if True:  # args.distributed:
         num_tasks = utils.get_world_size()
@@ -191,6 +252,14 @@ def main(args):
             )
             sampler_train_list.append(sampler_train)
         print("Sampler_train = %s" % str(sampler_train))
+
+        # Set up validation samplers
+        sampler_val_list = []
+        for dataset in dataset_val_list:
+            sampler_val = torch.utils.data.DistributedSampler(
+                dataset, num_replicas=num_tasks, rank=sampler_rank, shuffle=False
+            )
+            sampler_val_list.append(sampler_val)
     else:
         sampler_train = torch.utils.data.RandomSampler(dataset_train)
 
@@ -211,6 +280,17 @@ def main(args):
         )
         data_loader_train_list.append(data_loader_train)
 
+    data_loader_val_list = []
+    for dataset, sampler in zip(dataset_val_list, sampler_val_list):
+        data_loader_val = torch.utils.data.DataLoader(
+            dataset, sampler=sampler,
+            batch_size=args.batch_size,
+            num_workers=args.num_workers,
+            pin_memory=args.pin_mem,
+            drop_last=False,
+        )
+        data_loader_val_list.append(data_loader_val)
+
     model.to(device)
     model_without_ddp = model
     n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -218,7 +298,6 @@ def main(args):
     print("Model = %s" % str(model_without_ddp))
     print('number of params:', n_parameters)
 
-    print("Tokenizer = %s" % str(vqnsp))
     total_batch_size = args.batch_size * utils.get_world_size() * args.gradient_accumulation_steps
     print("LR = %.8f" % args.lr)
     print("Batch size = %d" % total_batch_size)
@@ -244,10 +323,34 @@ def main(args):
         args.weight_decay, args.weight_decay_end, args.epochs, num_training_steps_per_epoch)
     print("Max WD = %.7f, Min WD = %.7f" % (max(wd_schedule_values), min(wd_schedule_values)))
 
-    utils.auto_load_model(
-        args=args, model=model, model_without_ddp=model_without_ddp, optimizer=optimizer, loss_scaler=loss_scaler)
-
-    print(f"Start training for {args.epochs} epochs")
+    if args.resume:
+        print(f"Loading checkpoint from {args.resume}")
+        checkpoint = torch.load(args.resume, map_location='cpu')
+        
+        if 'model' in checkpoint:
+            model_dict = checkpoint['model']
+            # Remove the problematic key
+            if 'logit_scale' in model_dict:
+                print("Removing logit_scale from checkpoint")
+                del model_dict['logit_scale']
+            
+            # Load the modified state dict
+            model_without_ddp.load_state_dict(model_dict, strict=False)  # Use strict=False for safety
+            
+        # Load optimizer state, etc. if needed
+        if 'optimizer' in checkpoint:
+            optimizer.load_state_dict(checkpoint['optimizer'])
+        if 'epoch' in checkpoint:
+            args.start_epoch = checkpoint['epoch'] + 1
+        if 'scaler' in checkpoint and loss_scaler is not None:
+            loss_scaler.load_state_dict(checkpoint['scaler'])
+    else:
+        # Use the normal auto_load_model function if not resuming
+        utils.auto_load_model(
+            args=args, model=model, model_without_ddp=model_without_ddp, 
+            optimizer=optimizer, loss_scaler=loss_scaler)
+    
+    print(f"Start fine-tuning for {args.epochs} epochs")
     start_time = time.time()
     for epoch in range(args.start_epoch, args.epochs):
         if args.distributed:
@@ -271,6 +374,9 @@ def main(args):
                 args=args, model=model, model_without_ddp=model_without_ddp, optimizer=optimizer,
                 loss_scaler=loss_scaler, epoch=epoch, save_ckpt_freq=args.save_ckpt_freq)
 
+        # Evaluate on validation data if available
+        # Note: You'll need to implement a validation function if needed
+
         log_stats = {**{f'train_{k}': v for k, v in train_stats.items()},
                      'epoch': epoch, 'n_parameters': n_parameters}
 
@@ -280,9 +386,12 @@ def main(args):
             with open(os.path.join(args.output_dir, "log.txt"), mode="a", encoding="utf-8") as f:
                 f.write(json.dumps(log_stats) + "\n")
 
+
+
+
     total_time = time.time() - start_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
-    print('Training time {}'.format(total_time_str))
+    print('Fine-tuning time {}'.format(total_time_str))
 
 
 if __name__ == '__main__':

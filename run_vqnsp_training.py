@@ -16,9 +16,9 @@ import torch
 import torch.backends.cudnn as cudnn
 import json
 import os
+import pandas as pd
 
 from pathlib import Path
-
 from timm.models import create_model
 from optim_factory import create_optimizer
 
@@ -26,13 +26,13 @@ from engine_for_vqnsp import evaluate, train_one_epoch, calculate_codebook_usage
 from utils import NativeScalerWithGradNormCount as NativeScaler
 import modeling_vqnsp
 import utils
-
+from utils import get_channel_names
 
 def get_args():
     parser = argparse.ArgumentParser('LaBraM pre-training script', add_help=False)
     parser.add_argument('--batch_size', default=64, type=int)
-    parser.add_argument('--epochs', default=100, type=int)
-    parser.add_argument('--save_ckpt_freq', default=20, type=int)
+ #   parser.add_argument('--epochs', default=100, type=int)
+    parser.add_argument('--save_ckpt_freq', default=5, type=int)
     # Model parameters
     parser.add_argument('--model', default='vqnsp_encoder_base_decoder_3x200x12', type=str, metavar='MODEL',  help='Name of model to train')  
 
@@ -60,8 +60,8 @@ def get_args():
         weight decay. We use a cosine schedule for WD. 
         (Set the same value with args.weight_decay to keep weight decay no change)""")
 
-    parser.add_argument('--lr', type=float, default=5e-5, metavar='LR',
-                        help='learning rate (default: 5e-5)')
+    #parser.add_argument('--lr', type=float, default=5e-5, metavar='LR',
+                      #  help='learning rate (default: 5e-5)')
     parser.add_argument('--warmup_lr', type=float, default=1e-6, metavar='LR',
                         help='warmup learning rate (default: 1e-6)')
     parser.add_argument('--min_lr', type=float, default=1e-5, metavar='LR',
@@ -71,6 +71,7 @@ def get_args():
                         help='epochs to warmup LR, if scheduler supports')
     parser.add_argument('--warmup_steps', type=int, default=-1, metavar='N',
                         help='epochs to warmup LR, if scheduler supports')
+    parser.add_argument('--model_key', default='model|module', type=str)
 
     # Dataset parameters
     parser.add_argument('--output_dir', default='',
@@ -95,7 +96,7 @@ def get_args():
 
     parser.add_argument('--start_epoch', default=0, type=int, metavar='N',
                         help='start epoch')
-    parser.add_argument('--num_workers', default=10, type=int)
+    parser.add_argument('--num_workers', default=4, type=int)
     parser.add_argument('--pin_mem', action='store_true',
                         help='Pin CPU memory in DataLoader for more efficient (sometimes) transfer to GPU.')
     parser.add_argument('--no_pin_mem', action='store_false', dest='pin_mem',
@@ -109,6 +110,15 @@ def get_args():
     parser.add_argument('--dist_on_itp', action='store_true')
     parser.add_argument('--dist_url', default='env://', help='url used to set up distributed training')
 
+## NEW ARGS
+    parser.add_argument('--pretrained_tokenizer', type=str, default='/zhome/ce/8/186807/Desktop/Labram/LaBraM-MMDTU/checkpoints/vqnsp.pth',
+                    help='Path to pre-trained tokenizer weights')
+    parser.add_argument('--lr', type=float, default=1e-5, 
+                        help='Lower learning rate for fine-tuning (default: 1e-5)')
+    parser.add_argument('--epochs', default=30, type=int, 
+                        help='Fewer epochs for fine-tuning')
+    parser.add_argument('--use_dtu_loader', action='store_true',
+                    help='Use the DTU data loader instead of ShockDataset')
     return parser.parse_args()
 
 
@@ -142,9 +152,7 @@ def main(args):
 
     cudnn.benchmark = True
 
-    model = get_model(args)
-
-    # get dataset
+    """"    # get dataset
     # datasets with the same montage can be packed within a sublist
     datasets_train = [
         ["path/to/dataset1", "path/to/dataset2"], # e.g., 64 channels for dataset1 and dataset2
@@ -156,15 +164,35 @@ def main(args):
         4, # set the time window to 4 so that the sequence length is 4 * 64 = 256
         8, # set the time window to 8 so that the sequence length is 8 * 32 = 256
     ]
-    dataset_train_list, train_ch_names_list = utils.build_pretraining_dataset(datasets_train, time_window, stride_size=200)
+    """""
+    
+    datasets_train = [["/work3/s224183/LaBraM_data/train"],["/work3/s224183/LaBraM_data/test"]]
+    time_window = [4]
+
+    if args.use_dtu_loader:
+        # Use the DTU data loader
+        train_dataset, test_dataset, val_dataset = utils.prepare_DTU_data("/work3/s224183/LaBraM_data")
+        dataset_train_list = [train_dataset]
+        dataset_train_list.append(val_dataset)
+        train_ch_names_list = get_channel_names()  # You'll need to define proper channel names if required
+        
+        if not args.disable_eval:
+            dataset_val_list = [test_dataset]
+            val_ch_names_list = get_channel_names()  # Same here for channel names
+    else:
+        # Original ShockDataset loading logic
+        dataset_train_list, train_ch_names_list = utils.build_pretraining_dataset(datasets_train, time_window, stride_size=200)
+        
+        if not args.disable_eval:
+            dataset_val_list, val_ch_names_list = utils.build_pretraining_dataset(datasets_val, [4])
+        dataset_train_list, train_ch_names_list = utils.build_pretraining_dataset(datasets_train, time_window, stride_size=200)
+
+    model = get_model(args, pretrained=True, pretrained_weight=args.pretrained_tokenizer)
+
 
     datasets_val = [
-        ["path/to/datasets_val"]
+        ["/work3/s224183/LaBraM_data/val"]
     ]
-    if args.disable_eval:
-        dataset_val_list = None
-    else:
-        dataset_val_list, val_ch_names_list = utils.build_pretraining_dataset(datasets_val, [4])
 
     if True:  # args.distributed:
         num_tasks = utils.get_world_size()
@@ -254,8 +282,10 @@ def main(args):
     print("Number of training steps = %d" % num_training_steps_per_epoch)
     print("Number of training examples per epoch = %d" % (total_batch_size * num_training_steps_per_epoch))
 
+    
     optimizer = create_optimizer(args, model_without_ddp)
     loss_scaler = NativeScaler()
+
 
     if args.distributed:
         model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu], find_unused_parameters=True)
@@ -320,6 +350,7 @@ def main(args):
         else:
             log_stats = {**{f'train_{k}': v for k, v in train_stats.items()},
                         'epoch': epoch, 'n_parameters': n_learnable_parameters}
+
 
         if args.output_dir and utils.is_main_process():
             if log_writer is not None:

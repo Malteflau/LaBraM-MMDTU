@@ -34,10 +34,11 @@ import pickle
 from scipy.signal import resample
 from pyhealth.metrics import binary_metrics_fn, multiclass_metrics_fn
 import pandas as pd
-from sklearn.metrics import r2_score
-from sklearn.metrics import mean_squared_error
+
 from scipy.stats import pearsonr
 
+from sklearn.metrics import r2_score, mean_squared_error
+from scipy.stats import pearsonr
 
 standard_1020 = [
     'FP1', 'FPZ', 'FP2', 
@@ -756,79 +757,6 @@ class TUEVLoader(torch.utils.data.Dataset):
         X = torch.FloatTensor(X)
         return X, Y
 
-class DTULoader(torch.utils.data.Dataset):
-    def __init__(self, root, files, sampling_rate=200):
-        self.root = root
-        self.files = files
-        self.default_rate = 200
-        self.sampling_rate = sampling_rate
-        
-        # Define channel mapping
-        self.channel_mapping = {
-            'Fp1': 'EEG Fp1-REF', 'AF7': 'EEG AF7-REF', 'AF3': 'EEG AF3-REF',
-            # ... add all your channel mappings here
-        }
-
-    def __len__(self):
-        return len(self.files)
-
-    def __getitem__(self, index):
-        sample = pickle.load(open(os.path.join(self.root, self.files[index]), "rb"))
-        # Adjust these lines according to your data format
-        X = sample["X"]  # or whatever key your data uses
-        if self.sampling_rate != self.default_rate:
-            X = resample(X, 10 * self.sampling_rate, axis=-1)
-        Y = sample["y"]  # or whatever key your labels use
-        X = torch.FloatTensor(X)
-        return X, Y
-
-def prepare_DTU_data():
-    data = "/Users/maltelau/Desktop/LaBraM/LaBraM/DataProcessed/f"
-    
-    if not os.path.exists(data):
-        raise FileNotFoundError(f"Data directory not found: {data}")
-
-    seed = 4523
-    np.random.seed(seed)
-
-    # Get only .pkl files if that's what you're using
-    files = [f for f in os.listdir(data) if f.endswith('.pkl')]
-    if not files:
-        raise ValueError(f"No valid files found in {data}")
-        
-    np.random.shuffle(files)
-
-    train_files = files[:int(0.8 * len(files))]
-    val_files = files[int(0.8 * len(files)):int(0.9 * len(files))]
-    test_files = files[int(0.9 * len(files)):]
-
-    # Use DTULoader instead of TUABLoader
-    train_dataset = DTULoader(data, train_files)
-    val_dataset = DTULoader(data, val_files)
-    test_dataset = DTULoader(data, test_files)
-
-    print(f"DTU Data Split:")
-    print(f"Train: {len(train_files)} files")
-    print(f"Val: {len(val_files)} files")
-    print(f"Test: {len(test_files)} files")
-
-    return train_dataset, val_dataset, test_dataset
-
-def prepare_DTU_data():
-    # load the dataset from DataProcessed/f and split it randomly into train val and test
-    data = "/Users/maltelau/Desktop/LaBraM/LaBraM/DataProcessed/f"
-    #split data into train test and val
-    files = os.listdir(data)
-    np.random.shuffle(files)
-    train_files = files[:int(0.8 * len(files))]
-    val_files = files[int(0.8 * len(files)):int(0.9 * len(files))]
-    test_files = files[int(0.9 * len(files)):]
-    # prepare training and test data loader
-    train_dataset = DTULoader(data, train_files)
-    test_dataset = DTULoader(data, test_files)
-    val_dataset = DTULoader(data, val_files)
-    return train_dataset, test_dataset, val_dataset
-
 
 def prepare_TUEV_dataset(root):
     # set random seed
@@ -876,6 +804,170 @@ def prepare_TUAB_dataset(root):
     print(len(train_files), len(val_files), len(test_files))
     return train_dataset, test_dataset, val_dataset
 
+"""""
+Malte and Magnus' code goes here
+
+"""""
+
+class DTULoader(torch.utils.data.Dataset):
+    def __init__(self, root, files, sampling_rate=200):
+        self.root = root
+        self.files = files
+        self.default_rate = 200
+        self.sampling_rate = sampling_rate
+        
+    def __len__(self):
+        return len(self.files)
+
+    def __getitem__(self, index):
+        sample = pickle.load(open(os.path.join(self.root, self.files[index]), "rb"))
+        X = sample["X"]
+        
+        ######Has feedback
+        #y = sample["y"]
+
+        ######Friendship status
+        #y = 1 if sample["friend_status"] == "Yes" else 0
+
+        ######class close friends
+        #y = 1 if sample["class_friends"] >= 15 else 0 
+        
+        # ######age above 22
+        #y = 1 if sample["age"] > 22 else 0
+
+        def split_solo_vs_group(condition_type,participant_num):
+            if condition_type in ('T1P', 'T1Pn'):
+                return True
+            elif condition_type in ('T12P', 'T12Pn') and participant_num == 'P3':
+                return True
+            elif condition_type in ('T13P', 'T13Pn') and participant_num == 'P2':
+                return True
+            elif condition_type in ('T23P', 'T23Pn') and participant_num == 'P1':
+                return True
+            else:
+                return False
+
+        y = split_solo_vs_group(sample["condition"],sample["participant_num"])
+
+        #y = 1 if sample["gender"] == "M" else 0
+
+       ## If X has shape [channels, patches, time_per_patch]
+        if X.ndim == 3:
+            channels, patches, time_per_patch = X.shape
+            # Reshape to [channels, total_time_points]
+            X = X.reshape(channels, patches * time_per_patch)
+            
+        # Convert to tensor - ensure we have shape [channels, time_points]
+        X_tensor = torch.FloatTensor(X)
+        
+        # Create target tensor with correct shape - scalar instead of extra dimensions
+
+        y_tensor = torch.FloatTensor([y]).squeeze() # This makes it [1] instead of [1,1]
+
+        return X_tensor, y_tensor
+    
+    # def __getitem__(self, index):
+    #     sample = pickle.load(open(os.path.join(self.root, self.files[index]), "rb"))
+    #     X = sample["X"]
+        
+    #     # Handle padding to match expected input size of 1600
+    #     if X.ndim == 3:  # [channels, patches, time_per_patch]
+    #         channels, patches, time_per_patch = X.shape
+    #         # Reshape to [channels, total_time_points]
+    #         X = X.reshape(channels, patches * time_per_patch)
+        
+    #     # Pad to 1600 if needed
+    #     current_length = X.shape[1]
+    #     if current_length < 1600:
+    #         padded_X = np.zeros((X.shape[0], 1600))
+    #         padded_X[:, :current_length] = X
+    #         X = padded_X
+        
+    #     # Convert to tensor
+    #     X_tensor = torch.FloatTensor(X)
+    #     y_tensor = torch.FloatTensor([sample["y"]]).squeeze()
+        
+    #     return X_tensor, y_tensor
+    
+def linear_regression_loss(output, target):
+    """
+    Mean squared error loss for linear regression problems.
+    
+    Args:
+        output: Predictions from the model
+        target: Ground truth values
+    
+    Returns:
+        MSE loss
+    """
+    return torch.mean((output - target) ** 2)
+
+def prepare_DTU_data(root):
+    # set random seed
+    seed = 12345
+    np.random.seed(seed)
+
+    # Get all files in each directory
+    train_files = os.listdir(os.path.join(root, "train"))
+    val_files = os.listdir(os.path.join(root, "val"))
+    test_files = os.listdir(os.path.join(root, "test"))
+
+    # Create dataset loaders
+    train_dataset = DTULoader(os.path.join(root, "train"), train_files)
+    test_dataset = DTULoader(os.path.join(root, "test"), test_files)
+    val_dataset = DTULoader(os.path.join(root, "val"), val_files)
+    
+    # Print class distribution statistics
+    print("Dataset class distribution:")
+    
+    # For training set
+    # train_labels = []
+    # for i in range(len(train_dataset)):
+    #     _, y = train_dataset[i]
+    #     if hasattr(y, 'item'):
+    #         train_labels.append(y.item())
+    #     else:
+    #         train_labels.append(int(y))
+    
+    # train_counts = np.bincount(train_labels)
+    # train_total = len(train_labels)
+    # print(f"Training set: Class 0: {train_counts[0]} ({train_counts[0]/train_total:.2%}), " 
+    #       f"Class 1: {train_counts[1]} ({train_counts[1]/train_total:.2%})")
+    
+    # # For validation set
+    # val_labels = []
+    # for i in range(len(val_dataset)):
+    #     _, y = val_dataset[i]
+    #     if hasattr(y, 'item'):
+    #         val_labels.append(y.item())
+    #     else:
+    #         val_labels.append(int(y))
+    
+    # val_counts = np.bincount(val_labels)
+    # val_total = len(val_labels)
+    # print(f"Validation set: Class 0: {val_counts[0]} ({val_counts[0]/val_total:.2%}), "
+    #       f"Class 1: {val_counts[1]} ({val_counts[1]/val_total:.2%})")
+    
+    # # For test set
+    # test_labels = []
+    # for i in range(len(test_dataset)):
+    #     _, y = test_dataset[i]
+    #     if hasattr(y, 'item'):
+    #         test_labels.append(y.item())
+    #     else:
+    #         test_labels.append(int(y))
+    
+    # test_counts = np.bincount(test_labels)
+    # test_total = len(test_labels)
+    # print(f"Test set: Class 0: {test_counts[0]} ({test_counts[0]/test_total:.2%}), "
+    #       f"Class 1: {test_counts[1]} ({test_counts[1]/test_total:.2%})")
+    
+    return train_dataset, test_dataset, val_dataset
+
+"""""
+Malte and Magnus' code ends here
+
+"""""
 
 def get_metrics(output, target, metrics, is_binary, threshold=0.5):
     if is_binary:
@@ -898,3 +990,25 @@ def get_metrics(output, target, metrics, is_binary, threshold=0.5):
             target, output, metrics=metrics
         )
     return results
+
+def get_channel_names():
+    channel_mapping = {
+    'Fp1': 'EEG FP1-REF', 'AF7': 'EEG AF7-REF', 'AF3': 'EEG AF3-REF', 'F1': 'EEG F1-REF',
+    'F3': 'EEG F3-REF', 'F5': 'EEG F5-REF', 'F7': 'EEG F7-REF', 'FT7': 'EEG FT7-REF',
+    'FC5': 'EEG FC5-REF', 'FC3': 'EEG FC3-REF', 'FC1': 'EEG FC1-REF', 'C1': 'EEG C1-REF',
+    'C3': 'EEG C3-REF', 'C5': 'EEG C5-REF', 'T7': 'EEG T7-REF', 'TP7': 'EEG TP7-REF',
+    'CP5': 'EEG CP5-REF', 'CP3': 'EEG CP3-REF', 'CP1': 'EEG CP1-REF', 'P1': 'EEG P1-REF',
+    'P3': 'EEG P3-REF', 'P5': 'EEG P5-REF', 'P7': 'EEG P7-REF', 'P9': 'EEG P9-REF',
+    'PO7': 'EEG PO7-REF', 'PO3': 'EEG PO3-REF', 'O1': 'EEG O1-REF', 'Iz': 'EEG Iz-REF',
+    'Oz': 'EEG Oz-REF', 'POz': 'EEG POz-REF', 'Pz': 'EEG Pz-REF', 'CPz': 'EEG CPz-REF',
+    'Fpz': 'EEG Fpz-REF', 'Fp2': 'EEG FP2-REF', 'AF8': 'EEG AF8-REF', 'AF4': 'EEG AF4-REF',
+    'AFz': 'EEG AFz-REF', 'Fz': 'EEG Fz-REF', 'F2': 'EEG F2-REF', 'F4': 'EEG F4-REF',
+    'F6': 'EEG F6-REF', 'F8': 'EEG F8-REF', 'FT8': 'EEG FT8-REF', 'FC6': 'EEG FC6-REF',
+    'FC4': 'EEG FC4-REF', 'FC2': 'EEG FC2-REF', 'FCz': 'EEG FCz-REF', 'Cz': 'EEG Cz-REF',
+    'C2': 'EEG C2-REF', 'C4': 'EEG C4-REF', 'C6': 'EEG C6-REF', 'T8': 'EEG T8-REF',
+    'TP8': 'EEG TP8-REF', 'CP6': 'EEG CP6-REF', 'CP4': 'EEG CP4-REF', 'CP2': 'EEG CP2-REF',
+    'P2': 'EEG P2-REF', 'P4': 'EEG P4-REF', 'P6': 'EEG P6-REF', 'P8': 'EEG P8-REF',
+    'P10': 'EEG P10-REF', 'PO8': 'EEG PO8-REF', 'PO4': 'EEG PO4-REF', 'O2': 'EEG O2-REF'
+    }
+    ch_names = [name.upper() for name in channel_mapping.keys()]
+    return [ch_names]
