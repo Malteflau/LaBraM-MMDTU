@@ -3,9 +3,9 @@
 # -- our name ---
 #BSUB -J LaBraM_DTU_solovsgroup_50epoch
 # -- choose queue --
-#BSUB -q gpuv100
+#BSUB -q gpua100
 # -- specify that we need 4GB of memory per core/slot --
-#BSUB -R "rusage[mem=2GB]"
+#BSUB -R "rusage[mem=3GB]"
 # -- Notify me by email when execution begins --
 #BSUB -B
 # -- Notify me by email when execution ends --
@@ -28,7 +28,7 @@
 
 # Create log directories if they don't exist
 mkdir -p ./log/finetune_dtu_base/solovsgroup
-mkdir -p ./checkpoints/finetune_dtu_base/solovsgroup
+mkdir -p ./checkpoints/finetune_dtu_base/sologroup_betafilter1 \
 
 # Export unlimited file size for core dumps and stack traces
 ulimit -c unlimited
@@ -43,10 +43,10 @@ conda activate labram
 
 # Run the training with full output logging
 python run_class_finetuning.py \
-    --output_dir ./checkpoints/pretrain_dtu_labram/sologroup_feedback \
-    --log_dir ./log/finetune_dtu_base/gender \
+    --output_dir ./checkpoints/finetune_dtu_base/feedback_timeshift \
+    --log_dir ./log/finetune_dtu_base/sologroup \
     --model labram_base_patch200_200 \
-    --finetune /zhome/ce/8/186807/Desktop/Labram/LaBraM-MMDTU/checkpoints/pretrain_dtu_labram/checkpoint-49.pth \
+    --finetune /zhome/ce/8/186807/Desktop/Labram/LaBraM-MMDTU/checkpoints/labram-base.pth \
     --weight_decay 0.05 \
     --batch_size 64 \
     --lr 5e-4 \
@@ -61,5 +61,8 @@ python run_class_finetuning.py \
     --dataset DTU \
     --disable_qkv_bias \
     --seed 0 \
-    --condition sologroup \
-    --filter_feedback feedback
+    --condition feedback \
+    --filter_feedback all
+
+#####condition: (["sologroup","friendship","feedback","gender"])
+#filter_feedback(["all", "feedback","nofeedback"])

@@ -43,8 +43,8 @@ conda activate labram
 
 # Run the training with full output logging - using absolute paths
 python /zhome/ce/8/186807/Desktop/Labram/LaBraM-MMDTU/run_vqnsp_training.py \
-    --output_dir /zhome/ce/8/186807/Desktop/Labram/LaBraM-MMDTU/checkpoints/dtu_vqnsp_r \
-    --log_dir /zhome/ce/8/186807/Desktop/Labram/LaBraM-MMDTU/log/finetune_dtu_vqnsp \
+    --output_dir /zhome/ce/8/186807/Desktop/Labram/LaBraM-MMDTU/checkpoints/dtu_vqnsp_betaband \
+    --log_dir /zhome/ce/8/186807/Desktop/Labram/LaBraM-MMDTU/log/finetune_dtu_vqnsp_betaband \
     --model vqnsp_encoder_base_decoder_3x200x12 \
     --codebook_n_emd 8192 \
     --codebook_emd_dim 64 \

@@ -44,9 +44,9 @@ conda activate labram
 # Run the training with full output logging
 python run_class_finetuning.py \
     --output_dir ./checkpoints/finetune_dtu_base/feedback_dtu_lr5e4 \
-    --log_dir ./log/finetune_dtu_base/feedback \
+    --log_dir ./log/finetune_dtu_base/feedback_powerspec \
     --model labram_base_patch200_200 \
-    --finetune /zhome/ce/8/186807/Desktop/Labram/LaBraM-MMDTU/checkpoints/finetune_dtu_labram/checkpoint-49.pth \
+    --finetune /zhome/ce/8/186807/Desktop/Labram/LaBraM-MMDTU/checkpoints/dtu_vqnsp_raw_power/labram_UNSURE/checkpoint-49.pth \
     --weight_decay 0.05 \
     --batch_size 64 \
     --lr 5e-4 \

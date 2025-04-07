@@ -19,6 +19,7 @@ from collections import defaultdict, deque
 import datetime
 import numpy as np
 from timm.utils import get_state_dict
+import random
 
 from pathlib import Path
 import argparse
@@ -808,9 +809,293 @@ Malte and Magnus' code goes here
 
 """""
 
+
+
+
+
+
+
+
+
+class TriadDataLoader(torch.utils.data.Dataset):
+    def __init__(self, root, sampling_rate=200, condition=["feedback"], 
+                 filter_feedback_only=None, filter_non_feedback_only=None, filter_non_participant=True):
+        """
+        Load and combine EEG data from all participants in each triad.
+        
+        Args:
+            root (str): Path to dataset root directory
+            sampling_rate (int): Target sampling rate
+            condition (list): What condition to use for labels, e.g., ["feedback", "friendship", "gender", "sologroup"]
+            filter_feedback_only (bool): If True, only include samples with feedback
+            filter_non_feedback_only (bool): If True, only include samples without feedback
+            filter_non_participant (bool): If True, filter out trials where participant isn't involved
+        """
+        self.root = root
+        self.default_rate = 200
+        self.sampling_rate = sampling_rate
+        self.condition = condition
+        self.filter_feedback_only = filter_feedback_only
+        self.filter_non_feedback_only = filter_non_feedback_only
+        self.filter_non_participant = filter_non_participant
+        
+        # Get all files
+        all_files = sorted([f for f in os.listdir(self.root) if f.endswith('.pkl')])
+        
+        # Group files by triad, epoch_idx, and condition
+        self.triad_data = {}
+        
+        for file in all_files:
+            parts = file.split('_')
+            if len(parts) < 3:
+                continue
+                
+            triad_id = parts[0][:3]  # First 3 characters (e.g., "301" from "301A_10_T13P.pkl")
+            participant_pos = parts[0][-1]  # Last character (e.g., "A" from "301A_10_T13P.pkl")
+            epoch_idx = parts[1]
+            condition_str = '_'.join(parts[2:]).split('.')[0]  # Handle conditions with underscores
+            
+            key = f"{triad_id}_{epoch_idx}_{condition_str}"
+            
+            if key not in self.triad_data:
+                self.triad_data[key] = {}
+            
+            self.triad_data[key][participant_pos] = file
+        
+        # Keep only complete triads (all A, B, C participants for same epoch)
+        self.all_keys = []
+        for key, participants in self.triad_data.items():
+            if set(participants.keys()) == {'A', 'B', 'C'}:  # Must have all three participants
+                self.all_keys.append(key)
+        
+        print(f"Found {len(self.all_keys)} complete triads")
+        
+        # Apply filters to determine valid keys
+        self.valid_keys = []
+        if (filter_feedback_only is not None) or (filter_non_feedback_only is not None) or filter_non_participant:
+            for key in self.all_keys:
+                participants = self.triad_data[key]
+                valid_triad = True
+                
+                # Check each participant in the triad
+                for pos in ['A', 'B', 'C']:
+                    file = participants[pos]
+                    try:
+                        with open(os.path.join(self.root, file), 'rb') as f:
+                            sample = pickle.load(f)
+                            
+                            # Apply feedback filters if requested
+                            if self.filter_feedback_only is not None:
+                                has_feedback = sample.get("has_feedback", True)
+                                if self.filter_feedback_only and not has_feedback:
+                                    valid_triad = False
+                                    break
+                                elif self.filter_non_feedback_only and has_feedback:
+                                    valid_triad = False
+                                    break
+                            
+                            # Apply non-participant filter if requested
+                            if self.filter_non_participant:
+                                condition_str = sample.get("condition", "")
+                                participant_num = sample.get("participant_num", "")
+                                
+                                # Check specific conditions where participant is not involved
+                                if condition_str.startswith("T23") and participant_num == "P1":
+                                    valid_triad = False
+                                    break
+                                elif condition_str.startswith("T13") and participant_num == "P2":
+                                    valid_triad = False
+                                    break
+                                elif condition_str.startswith("T12") and participant_num == "P3":
+                                    valid_triad = False
+                                    break
+                    except Exception as e:
+                        print(f"Error reading file {file}: {e}")
+                        valid_triad = False
+                        break
+                
+                if valid_triad:
+                    self.valid_keys.append(key)
+            
+        else:
+            # If no filters, all complete triads are valid
+            self.valid_keys = self.all_keys.copy()
+        
+        print(f"Found {len(self.valid_keys)} valid triads after filtering")
+        if len(self.valid_keys) == 0:
+            print("WARNING: No valid triads found! Check your filtering criteria.")
+    
+    def _is_solo_condition(self, condition_str, participant_num):
+        """Helper to determine if this is a solo condition for this participant"""
+        if condition_str.startswith('T1P') and participant_num == 'P1':
+            return True
+        if condition_str.startswith('T1P') and participant_num == 'P2':
+            return True
+        if condition_str.startswith('T1P') and participant_num == 'P3':
+            return True
+        return False
+    
+    def __len__(self):
+        return len(self.valid_keys)
+
+    def __getitem__(self, index):
+        key = self.valid_keys[index]
+        participants = self.triad_data[key]
+        
+        # Load all participant data
+        eeg_data = []
+        labels = []
+        samples = []
+        
+        # Process files in a fixed order (A, B, C) to ensure consistency
+        for pos in ['A', 'B', 'C']:
+            file = participants[pos]
+            with open(os.path.join(self.root, file), 'rb') as f:
+                sample = pickle.load(f)
+                samples.append(sample)
+                
+                # Extract EEG data
+                X = sample["X"]
+                eeg_data.append(X)
+                
+                # Determine individual label based on condition
+                if self.condition[0] == "feedback":
+                    y = 1 if sample.get("has_feedback", True) else 0
+                elif self.condition[0] == "friendship":
+                    y = 1 if sample.get("friend_status", "") == "Yes" else 0
+                elif self.condition[0] == "sologroup":
+                    condition_str = sample.get("condition", "")
+                    participant_num = sample.get("participant_num", "")
+                    y = 1 if self._is_solo_condition(condition_str, participant_num) else 0
+                elif self.condition[0] == "gender":
+                    y = 1 if sample.get("gender", "") == "M" else 0
+                else:
+                    # Default fallback
+                    y = sample.get("y", 0)
+                
+                labels.append(y)
+        
+        # Now combine the data correctly
+        if eeg_data[0].ndim == 3:
+            # Data is [channels, patches, time_per_patch]
+            channels, patches, patch_size = eeg_data[0].shape
+            
+            # Concatenate all patches from all participants
+            # This needs to be flattened to work with the rearrange in train_one_epoch
+            all_patches = np.concatenate([data.reshape(channels, -1) for data in eeg_data], axis=1)
+        else:
+            # Handle unexpected shape
+            raise ValueError(f"Unexpected data shape: {eeg_data[0].shape}. Expected [channels, patches, time_per_patch]")
+        
+        # Create triad label based on condition
+        if self.condition[0] == "feedback":
+            # If any participant has feedback, the trial is considered to have feedback
+            triad_label = 1 if any(labels) else 0
+        elif self.condition[0] == "friendship":
+            # Majority vote for friendship
+            triad_label = 1 if sum(labels) >= 2 else 0
+        elif self.condition[0] == "gender":
+            # Majority vote for gender
+            triad_label = 1 if sum(labels) >= 2 else 0
+        elif self.condition[0] == "sologroup":
+            # If any participant is in a solo condition, consider it solo
+            triad_label = 1 if any(labels) else 0
+        else:
+            # Default: if any participant has label 1
+            triad_label = 1 if any(labels) else 0
+        
+        # Convert to tensor
+        X_tensor = torch.FloatTensor(all_patches)  # Shape should be [channels, combined_time]
+        y_tensor = torch.FloatTensor([triad_label]).squeeze()
+        
+        return X_tensor, y_tensor
+
+def prepare_DTU_triad_data(root, condition=["feedback"], filter_feedback_only=None, 
+                          filter_non_feedback_only=None, filter_non_participant=True):
+    """
+    Prepare training and test datasets with triads properly matched.
+    
+    Args:
+        root (str): Path to the dataset root directory
+        condition (list): Condition to use for labeling
+        filter_feedback_only (bool): Only include trials with feedback
+        filter_non_feedback_only (bool): Only include trials without feedback
+        filter_non_participant (bool): Exclude trials where participant isn't involved
+    
+    Returns:
+        tuple: train_dataset, test_dataset
+    """
+    # Set random seed for reproducibility
+    seed = 12345
+    np.random.seed(seed)
+    
+    # Create dataset loaders for each split with filtering options
+    train_dataset = TriadDataLoader(
+        os.path.join(root, "train"), 
+        condition=condition,
+        filter_feedback_only=filter_feedback_only,
+        filter_non_feedback_only=filter_non_feedback_only,
+        filter_non_participant=filter_non_participant
+    )
+    
+    test_dataset = TriadDataLoader(
+        os.path.join(root, "test"), 
+        condition=condition,
+        filter_feedback_only=filter_feedback_only,
+        filter_non_feedback_only=filter_non_feedback_only,
+        filter_non_participant=filter_non_participant
+    )
+    
+    # Report dataset statistics
+    print(f"Training triads: {len(train_dataset)}")
+    print(f"Test triads: {len(test_dataset)}")
+    
+    # Check class distribution
+    if len(train_dataset) > 0:
+        train_labels = []
+        for i in range(min(1000, len(train_dataset))):  # Sample up to 100 items for speed
+            _, y = train_dataset[i]
+            train_labels.append(y.item())
+        
+        train_pos = sum(train_labels)
+        train_total = len(train_labels)
+        train_pct = train_pos / train_total if train_total > 0 else 0
+        print(f"Training label distribution: {train_pos}/{train_total} positive ({train_pct:.1%})")
+    
+    if len(test_dataset) > 0:
+        test_labels = []
+        for i in range(min(1000, len(test_dataset))):  # Sample up to 100 items for speed
+            _, y = test_dataset[i]
+            test_labels.append(y.item())
+        
+        test_pos = sum(test_labels)
+        test_total = len(test_labels)
+        test_pct = test_pos / test_total if test_total > 0 else 0
+        print(f"Testing label distribution: {test_pos}/{test_total} positive ({test_pct:.1%})")
+    
+    
+    return train_dataset, test_dataset
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 class DTULoader(torch.utils.data.Dataset):
     def __init__(self, root, files, sampling_rate=200, condition=["feedback"], 
-                 filter_feedback_only=None, filter_non_feedback_only=None, filter_non_participant=True):
+                 filter_feedback_only=None, filter_non_feedback_only=None, filter_non_participant=True, type="train"):
         self.root = root
         self.files = files
         self.default_rate = 200
@@ -819,6 +1104,7 @@ class DTULoader(torch.utils.data.Dataset):
         self.filter_non_feedback_only = filter_non_feedback_only
         self.filter_non_participant = filter_non_participant
         self.condition = condition
+        self.type = type
         
         # Pre-scan to find valid indices
         self.valid_indices = []
@@ -871,9 +1157,10 @@ class DTULoader(torch.utils.data.Dataset):
     def __getitem__(self, index):
         file_index = self.valid_indices[index]
         file = self.files[file_index]
+        type = self.type
         sample = pickle.load(open(os.path.join(self.root, file), "rb"))
         X = sample["X"]
-        
+
         # Determine label based on condition
         if self.condition[0] == "feedback":
             y = sample["y"]  # Use pre-existing feedback label
@@ -892,29 +1179,89 @@ class DTULoader(torch.utils.data.Dataset):
 
         channels, patches, time_per_patch = X.shape
 
-        # for computing power spectrum  
-        X_power = np.zeros((channels, patches, time_per_patch))    
-        for ch in range(channels):
-            for p in range(patches):
-                time_series = X[ch, p, :]
-                windowed_data = time_series * np.hanning(time_per_patch)
-                fft_result = np.fft.fft(windowed_data, n=time_per_patch)
-                power = np.abs(fft_result)**2
-                X_power[ch, p, :] = power
+        # # for computing power spectrum  
+        # X_power = np.zeros((channels, patches, time_per_patch))    
+        # for ch in range(channels):
+        #     for p in range(patches):
+        #         time_series = X[ch, p, :]
+        #         windowed_data = time_series * np.hanning(time_per_patch)
+        #         fft_result = np.fft.fft(windowed_data, n=time_per_patch)
+        #         power = np.abs(fft_result)**2
+        #         X_power[ch, p, :] = power
         
-        X_tensor = torch.FloatTensor(X_power.reshape(channels, patches * time_per_patch))
+        # X_tensor = torch.FloatTensor(X_power.reshape(channels, patches * time_per_patch))
 
         
-        X_raw_reshaped = X.reshape(channels, patches * time_per_patch)
-        X_raw_tensor = torch.FloatTensor(X_raw_reshaped)
-        combined_tensor = torch.cat([X_raw_tensor, X_tensor], dim=1)
-        combined_tensor = torch.FloatTensor(combined_tensor)
+        # X_raw_reshaped = X.reshape(channels, patches * time_per_patch)
+        # X_raw_tensor = torch.FloatTensor(X_raw_reshaped)
+        # combined_tensor = torch.cat([X_raw_tensor, X_tensor], dim=1)
+        # combined_tensor = torch.FloatTensor(combined_tensor)
 
-        # X_tensor = torch.FloatTensor(X.reshape(channels,patches*time_per_patch))
+        X_tensor = torch.FloatTensor(X.reshape(channels,patches*time_per_patch))
+        if type == "train":
+            X_tensor = self._time_shift_patches(X_tensor,max_shift=199)
+        else:
+            pass
         y_tensor = torch.FloatTensor([y]).squeeze()  # This makes it [1] instead of [1,1]
+        return X_tensor , y_tensor
 
-        return combined_tensor , y_tensor
+    def _time_shift_patches(self, X, max_shift=199):
+        # Check the input shape
+        channels, time_points = X.shape
+        
+        # Generate a random shift between 0 and max_shift
+        shift = random.randint(0, max_shift)
+        
+        # Calculate how many time points we'll use (3 patches of 200 = 600)
+        points_to_keep = 600
+        
+        # Extract the shifted data window (shift : shift + points_to_keep)
+        # Ensure we don't exceed the available time points
+        if shift + points_to_keep <= time_points:
+            X_shifted = X[:, shift:shift + points_to_keep]
+        else:
+            # Handle edge case where shift pushes beyond available data
+            # This shouldn't happen with your parameters, but included for safety
+            remaining = shift + points_to_keep - time_points
+            X_shifted = torch.cat([X[:, shift:, :], 
+                                torch.zeros((channels, remaining, 1))], dim=1)
+        
+        return X_shifted
     
+    def _apply_bandpass_filter(self, data, low_freq, high_freq):
+        """
+        Apply bandpass filter to EEG data.
+        
+        Args:
+            data: numpy array of shape (channels, patches, time_per_patch)
+            low_freq: low cutoff frequency in Hz
+            high_freq: high cutoff frequency in Hz
+            
+        Returns:
+            Filtered data with same shape as input
+        """
+        from scipy import signal
+        
+        # Assuming data is sampled at 200 Hz (based on LaBraM's standard)
+        fs = 200
+        
+        # Design the Butterworth bandpass filter
+        nyq = 0.5 * fs
+        low = low_freq / nyq
+        high = high_freq / nyq
+        order = 4
+        b, a = signal.butter(order, [low, high], btype='band')
+        
+        # Initialize output array with same shape as input
+        filtered_data = np.zeros_like(data)
+        
+        # Apply filter to each channel and patch separately
+        for ch in range(data.shape[0]):
+            for p in range(data.shape[1]):
+                # Apply forward-backward filter to avoid phase distortion
+                filtered_data[ch, p, :] = signal.filtfilt(b, a, data[ch, p, :])
+        return filtered_data
+
     def _is_solo_condition(self, condition_str, participant_num):
         """Helper method to determine if a trial is solo for this participant"""
         if condition_str.startswith("T1") and not condition_str.startswith("T12") and not condition_str.startswith("T13"):
@@ -957,7 +1304,8 @@ def prepare_DTU_data(root, condition=["feedback"], filter_feedback_only=None,
         condition=condition, 
         filter_feedback_only=filter_feedback_only,
         filter_non_feedback_only=filter_non_feedback_only,
-        filter_non_participant=filter_non_participant
+        filter_non_participant=filter_non_participant,
+        type="train"
     )
     
     test_dataset = DTULoader(
@@ -966,7 +1314,8 @@ def prepare_DTU_data(root, condition=["feedback"], filter_feedback_only=None,
         condition=condition, 
         filter_feedback_only=filter_feedback_only,
         filter_non_feedback_only=filter_non_feedback_only,
-        filter_non_participant=filter_non_participant
+        filter_non_participant=filter_non_participant,
+        type="test"
     )
     
     # # Print class distribution statistics

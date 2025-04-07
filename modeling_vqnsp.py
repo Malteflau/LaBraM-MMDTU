@@ -152,11 +152,19 @@ class VQNSP(nn.Module):
         """
 
         x = rearrange(x, 'B N (A T) -> B N A T', T=200)
+        #This is for the original raw eeg data
         x_fft = torch.fft.fft(x, dim=-1)
         amplitude = torch.abs(x_fft)
         amplitude = self.std_norm(amplitude)
         angle = torch.angle(x_fft)
         angle = self.std_norm(angle)
+
+        # #This if for the power spectrum data
+        # amplitude = torch.abs(x)
+        # amplitude = self.std_norm(amplitude)
+        # angle = torch.angle(x)
+        # angle = self.std_norm(angle)
+
 
         quantize, embed_ind, emb_loss = self.encode(x, input_chans)
         

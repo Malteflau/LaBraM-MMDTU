@@ -23,6 +23,7 @@ from timm.loss import LabelSmoothingCrossEntropy, SoftTargetCrossEntropy
 from timm.utils import ModelEma
 from optim_factory import create_optimizer, get_parameter_groups, LayerDecayValueAssigner
 from torch.optim import Adam  # Replace Nadam with Adam or any other optimizer
+from utils import prepare_DTU_triad_data
 
 from engine_for_finetuning import train_one_epoch, evaluate
 from utils import NativeScalerWithGradNormCount as NativeScaler
@@ -249,7 +250,13 @@ def get_dataset(args):
         elif args.filter_feedback == 'nofeedback':
             filter_feedback_only = False
             filter_non_feedback_only = True
-            
+        
+        # train_dataset, test_dataset = prepare_DTU_triad_data(
+        #     "/work3/s224183/LaBraM_data", 
+        #     condition=condition,  # or any other condition
+        #     filter_feedback_only=None,  # Only include trials with feedback
+        #     #filter_non_participant=None  # Exclude trials where participant isn't involved
+        # )
         train_dataset, test_dataset = utils.prepare_DTU_data(
             "/work3/s224183/LaBraM_data", 
             condition=condition,
