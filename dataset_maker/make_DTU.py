@@ -244,7 +244,25 @@ def process_file(fif_file, participant_data, behavior_path, output_dir):
     except Exception as e:
         print(f"Error processing {fif_file}: {e}")
         return 0
+ 
+def parse_condition(condition):
+    """
+    Parse condition code to determine trial type and feedback status.
     
+    Args:
+        condition: Condition string from the EEG file (e.g., 'T12P', 'T13Pn', etc.)
+    
+    Returns:
+        tuple: (condition_type, has_feedback)
+            - condition_type: String describing which participants are involved
+            - has_feedback: Boolean indicating if this condition has feedback
+    """
+    # Determine has_feedback status - if 'Pn' is in the condition, there's no feedback
+    has_feedback = 'Pn' not in condition
+    condition_type = condition
+        
+    return condition_type, has_feedback
+
 def parse_participant(condition):
     """
     Parse condition code to determine which participants are involved.
