@@ -244,7 +244,25 @@ def process_file(fif_file, participant_data, behavior_path, output_dir):
     except Exception as e:
         print(f"Error processing {fif_file}: {e}")
         return 0
+
+def parse_condition(condition):
+    """
+    Parse condition code to determine trial type and feedback status.
     
+    Args:
+        condition: Condition string from the EEG file (e.g., 'T12P', 'T13Pn', etc.)
+    
+    Returns:
+        tuple: (condition_type, has_feedback)
+            - condition_type: String describing which participants are involved
+            - has_feedback: Boolean indicating if this condition has feedback
+    """
+    # Determine has_feedback status - if 'Pn' is in the condition, there's no feedback
+    has_feedback = 'Pn' not in condition
+    condition_type = condition
+        
+    return condition_type, has_feedback
+ 
 def parse_participant(condition):
     """
     Parse condition code to determine which participants are involved.
@@ -426,13 +444,15 @@ if __name__ == "__main__":
     data_dir = os.path.join(root_dir, "DTUDATA", "FG_Data")
     
     # Specific paths
-    eeg_folder_path = "/work3/s224183/PreprocessedEEGData/"
-    overview_path = os.path.join(data_dir, "FG_overview_df_v2.pkl")
-    behavior_path = os.path.join(data_dir, "Beh_feat_df_v2.pkl")
+    eeg_folder_path = "/work3/s224188/FG_Data/PreprocessedEEGData/"
+    #overview_path = os.path.join(data_dir, "FG_overview_df_v2.pkl")
+    overview_path = "/work3/s224188/FG_Data/FG_overview_df_v2.pkl"
+    #behavior_path = os.path.join(data_dir, "Beh_feat_df_v2.pkl")
+    behavior_path = "/work3/s224188/FG_Data/Beh_feat_df_v2.pkl"
     
     # Output paths
-    processed_dir = "/work3/s224183/processed"
-    output_dir = "/work3/s224183/LaBraM_data"
+    processed_dir = "/work3/s224188/processed"
+    output_dir = "/work3/s224188/LaBraM_data"
     
     # Create output directories
     os.makedirs(processed_dir, exist_ok=True)
