@@ -17,13 +17,8 @@ from einops import rearrange
 from sklearn.metrics import r2_score, mean_squared_error
 
 
-def train_class_batch(model, samples, target, criterion, ch_names, is_regression=False):
+def train_class_batch(model, samples, target, criterion, ch_names):
     outputs = model(samples, ch_names)
-    
-    if is_regression:
-        # For regression, ensure output and target have the same shape
-        if outputs.shape != target.shape:
-            outputs = outputs.view(target.shape)
     
     loss = criterion(outputs, target)
     return loss, outputs
@@ -161,15 +156,13 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
 
 @torch.no_grad()
 def evaluate(data_loader, model, device, header='Test:', ch_names=None, 
-             metrics=['acc'], is_binary=True, is_regression=False):
+             metrics=['acc'], is_binary=True):
     input_chans = None
     if ch_names is not None:
         input_chans = utils.get_input_chans(ch_names)
     
-    # Choose appropriate criterion based on task type
-    if is_regression:
-        criterion = utils.linear_regression_loss
-    elif is_binary:
+
+    if is_binary:
         criterion = torch.nn.BCEWithLogitsLoss()
     else:
         criterion = torch.nn.CrossEntropyLoss()
@@ -188,25 +181,14 @@ def evaluate(data_loader, model, device, header='Test:', ch_names=None,
         EEG = EEG.float().to(device, non_blocking=True)
         EEG = rearrange(EEG, 'B N (A T) -> B N A T', T=200)
         target = target.to(device, non_blocking=True)
-        
-        if is_binary and not is_regression:
-            target = target.float().unsqueeze(-1)
-        
+
         # compute output
         with torch.cuda.amp.autocast():
             output = model(EEG, input_chans=input_chans)
             
-            # Adjust output shape for regression if needed
-            if is_regression and output.shape != target.shape:
-                output = output.view(target.shape)
-                
             loss = criterion(output, target)
         
-        # Process outputs differently for different tasks
-        if is_regression:
-            # For regression, we just store the raw predictions
-            output = output.cpu()
-        elif is_binary:
+        if is_binary:
             output = torch.sigmoid(output).cpu()
         else:
             output = output.cpu()
@@ -220,10 +202,10 @@ def evaluate(data_loader, model, device, header='Test:', ch_names=None,
         metric_logger.update(loss=loss.item())
         
         # Calculate batch-level metrics if available
-        if not is_regression:
-            results = utils.get_metrics(output.numpy(), target.numpy(), metrics, is_binary)
-            for key, value in results.items():
-                metric_logger.meters[key].update(value, n=batch_size)
+
+        results = utils.get_metrics(output.numpy(), target.numpy(), metrics, is_binary)
+        for key, value in results.items():
+            metric_logger.meters[key].update(value, n=batch_size)
     
     # Gather the stats from all processes
     metric_logger.synchronize_between_processes()
@@ -232,19 +214,8 @@ def evaluate(data_loader, model, device, header='Test:', ch_names=None,
     all_preds = torch.cat(all_preds, dim=0).numpy()
     all_targets = torch.cat(all_targets, dim=0).numpy()
     
-    # Calculate appropriate metrics
-    if is_regression:
-        ret = {
-            'mse': mean_squared_error(all_targets, all_preds),
-            'r2': r2_score(all_targets, all_preds),
-        #    'pearson': pearsonr(all_targets.flatten(), all_preds.flatten())[0]
-        }
-        print('* Regression metrics:')
-        print(f'  MSE: {ret["mse"]:.4f}')
-        print(f'  R²: {ret["r2"]:.4f}')
-        #print(f'  Pearson correlation: {ret["pearson"]:.4f}')
-    else:
-        ret = utils.get_metrics(all_preds, all_targets, metrics, is_binary, 0.5)
+    # Calculate metrics
+    ret = utils.get_metrics(all_preds, all_targets, metrics, is_binary, 0.5)
         
     ret['loss'] = metric_logger.loss.global_avg
     return ret

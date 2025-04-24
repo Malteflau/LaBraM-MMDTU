@@ -144,9 +144,6 @@ def get_args():
     parser.add_argument('--auto_resume', action='store_true')
     parser.add_argument('--no_auto_resume', action='store_false', dest='auto_resume')
     parser.set_defaults(auto_resume=False)
-
-    parser.add_argument('--regression', action='store_true', default=False,
-                    help='Treat the task as a regression problem instead of classification')
     
     parser.add_argument('--save_ckpt', action='store_true')
     parser.add_argument('--no_save_ckpt', action='store_false', dest='save_ckpt')
@@ -251,6 +248,7 @@ def get_dataset(args):
             filter_feedback_only = False
             filter_non_feedback_only = True
         
+        # ACTIVATE THIS CODE IF YOU WANT TO CONCATENATE THE DATA IN THE TRIAD. Gets higher accuracy but still doesn't work
         # train_dataset, test_dataset = prepare_DTU_triad_data(
         #     "/work3/s224183/LaBraM_data", 
         #     condition=condition,  # or any other condition
@@ -264,7 +262,7 @@ def get_dataset(args):
             filter_non_feedback_only=filter_non_feedback_only,
             filter_non_participant=True
         )
-        # Channel names for DTU dataset
+        # Channel names for DTU dataset. Again this is pretty shitty code
         channel_mapping = {
             'Fp1': 'EEG FP1-REF', 'AF7': 'EEG AF7-REF', 'AF3': 'EEG AF3-REF', 'F1': 'EEG F1-REF',
             'F3': 'EEG F3-REF', 'F5': 'EEG F5-REF', 'F7': 'EEG F7-REF', 'FT7': 'EEG FT7-REF',
@@ -481,8 +479,6 @@ def main(args, ds_init):
         args.weight_decay, args.weight_decay_end, args.epochs, num_training_steps_per_epoch)
     print("Max WD = %.7f, Min WD = %.7f" % (max(wd_schedule_values), min(wd_schedule_values)))
 
-    if args.regression:
-        criterion = utils.linear_regression_loss
     elif args.nb_classes == 0:
         criterion = torch.nn.BCEWithLogitsLoss()
     elif args.nb_classes == 1:
@@ -533,38 +529,23 @@ def main(args, ds_init):
                 loss_scaler=loss_scaler, epoch=epoch, model_ema=model_ema, save_ckpt_freq=args.save_ckpt_freq)
         
         # Test on the test set
-        if args.regression:
-            test_stats = evaluate(data_loader_test, model, device, header='Test:', 
-                                ch_names=ch_names, metrics=['mse', 'r2'], 
-                                is_binary=args.nb_classes == 1, is_regression=True)
-            print(f"MSE of the network on the {len(dataset_test)} test EEG: {test_stats.get('mse', 0):.4f}")
-            print(f"R² of the network on the {len(dataset_test)} test EEG: {test_stats.get('r2', 0):.4f}")
-            
-            # For regression, use R² as the monitoring metric
-            if max_accuracy < test_stats.get("r2", 0):
-                max_accuracy = test_stats.get("r2", 0)
-                if args.output_dir and args.save_ckpt:
-                    utils.save_model(
-                        args=args, model=model, model_without_ddp=model_without_ddp, optimizer=optimizer,
-                        loss_scaler=loss_scaler, epoch="best", model_ema=model_ema)
-                max_accuracy_test = test_stats.get("r2", 0)
-        else:
-            # Use classification evaluation on the test set
-            test_stats = evaluate(data_loader_test, model, device, header='Test:', 
-                                ch_names=ch_names, metrics=metrics, 
-                                is_binary=args.nb_classes == 1, is_regression=False)
-            print(f"Accuracy of the network on the {len(dataset_test)} test EEG: {test_stats['accuracy']:.2f}%")
-            
-            # For classification, continue using accuracy as the monitoring metric
-            if max_accuracy < test_stats["accuracy"]:
-                max_accuracy = test_stats["accuracy"]
-                if args.output_dir and args.save_ckpt:
-                    utils.save_model(
-                        args=args, model=model, model_without_ddp=model_without_ddp, optimizer=optimizer,
-                        loss_scaler=loss_scaler, epoch="best", model_ema=model_ema)
-                max_accuracy_test = test_stats["accuracy"]
 
-            print(f'Max accuracy test: {max_accuracy_test:.2f}%')
+        # Use classification evaluation on the test set
+        test_stats = evaluate(data_loader_test, model, device, header='Test:', 
+                            ch_names=ch_names, metrics=metrics, 
+                            is_binary=args.nb_classes == 1)
+        print(f"Accuracy of the network on the {len(dataset_test)} test EEG: {test_stats['accuracy']:.2f}%")
+        
+        # For classification, continue using accuracy as the monitoring metric
+        if max_accuracy < test_stats["accuracy"]:
+            max_accuracy = test_stats["accuracy"]
+            if args.output_dir and args.save_ckpt:
+                utils.save_model(
+                    args=args, model=model, model_without_ddp=model_without_ddp, optimizer=optimizer,
+                    loss_scaler=loss_scaler, epoch="best", model_ema=model_ema)
+            max_accuracy_test = test_stats["accuracy"]
+
+        print(f'Max accuracy test: {max_accuracy_test:.2f}%')
 
         if log_writer is not None:
             log_writer.set_step((epoch + 1) * num_training_steps_per_epoch * args.update_freq)

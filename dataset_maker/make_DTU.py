@@ -245,17 +245,7 @@ def process_file(fif_file, participant_data, behavior_path, output_dir):
         return 0
     
 def parse_condition(condition):
-    """
-    Parse condition code to determine trial type and feedback status.
-    
-    Args:
-        condition: Condition string from the EEG file (e.g., 'T12P', 'T13Pn', etc.)
-    
-    Returns:
-        tuple: (condition_type, has_feedback)
-            - condition_type: String describing which participants are involved
-            - has_feedback: Boolean indicating if this condition has feedback
-    """
+    # dont think we really needed a function for this. but alright
     # Determine has_feedback status - if 'Pn' is in the condition, there's no feedback
     has_feedback = 'Pn' not in condition
     condition_type = condition
@@ -263,15 +253,6 @@ def parse_condition(condition):
     return condition_type, has_feedback
 
 def parse_participant(condition):
-    """
-    Parse condition code to determine which participants are involved.
-    
-    Args:
-        condition: Condition string from the EEG file (e.g., 'T12P', 'T13Pn', etc.)
-    
-    Returns:
-        list: List of participants involved in this condition
-    """
     # Extract participants based on the condition code
     if condition.startswith('T1'):
         if condition.startswith('T12'):
@@ -292,21 +273,13 @@ def parse_participant(condition):
         return ['P1', 'P2', 'P3']
 
 def is_participant_involved(condition, participant_num):
-    """
-    Determine if a participant is involved in a specific condition.
-    
-    Args:
-        condition: Condition string (e.g., 'T12P', 'T13Pn', etc.)
-        participant_num: Participant number (P1, P2, P3)
-    
-    Returns:
-        bool: True if participant is involved, False otherwise
-    """
+    #this is pretty shitty code
     involved_participants = parse_participant(condition)
     return participant_num in involved_participants
 
 
 def split_data_by_participant(processed_dir, output_dir):
+    # its called split by participant. thats pretty false, it splits by triad here. im too lazy to change it
     """
     Split processed data into train and test sets by participant.
     Test set will contain 18 participants (6 complete triads), train set will have the rest.

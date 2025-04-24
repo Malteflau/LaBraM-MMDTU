@@ -977,11 +977,9 @@ class TriadDataLoader(torch.utils.data.Dataset):
         
         # Now combine the data correctly
         if eeg_data[0].ndim == 3:
-            # Data is [channels, patches, time_per_patch]
             channels, patches, patch_size = eeg_data[0].shape
             
             # Concatenate all patches from all participants
-            # This needs to be flattened to work with the rearrange in train_one_epoch
             all_patches = np.concatenate([data.reshape(channels, -1) for data in eeg_data], axis=1)
         else:
             # Handle unexpected shape
@@ -991,21 +989,15 @@ class TriadDataLoader(torch.utils.data.Dataset):
         if self.condition[0] == "feedback":
             # If any participant has feedback, the trial is considered to have feedback
             triad_label = 1 if any(labels) else 0
-        elif self.condition[0] == "friendship":
-            # Majority vote for friendship
-            triad_label = 1 if sum(labels) >= 2 else 0
-        elif self.condition[0] == "gender":
-            # Majority vote for gender
-            triad_label = 1 if sum(labels) >= 2 else 0
         elif self.condition[0] == "sologroup":
             # If any participant is in a solo condition, consider it solo
             triad_label = 1 if any(labels) else 0
+        
         else:
-            # Default: if any participant has label 1
-            triad_label = 1 if any(labels) else 0
+            raise ValueError("Please select a condition")
         
         # Convert to tensor
-        X_tensor = torch.FloatTensor(all_patches)  # Shape should be [channels, combined_time]
+        X_tensor = torch.FloatTensor(all_patches)
         y_tensor = torch.FloatTensor([triad_label]).squeeze()
         
         return X_tensor, y_tensor
@@ -1053,7 +1045,7 @@ def prepare_DTU_triad_data(root, condition=["feedback"], filter_feedback_only=No
     # Check class distribution
     if len(train_dataset) > 0:
         train_labels = []
-        for i in range(min(1000, len(train_dataset))):  # Sample up to 100 items for speed
+        for i in range(min(1000, len(train_dataset))):  # Sample up to 1000 items for speed
             _, y = train_dataset[i]
             train_labels.append(y.item())
         
@@ -1064,7 +1056,7 @@ def prepare_DTU_triad_data(root, condition=["feedback"], filter_feedback_only=No
     
     if len(test_dataset) > 0:
         test_labels = []
-        for i in range(min(1000, len(test_dataset))):  # Sample up to 100 items for speed
+        for i in range(min(1000, len(test_dataset))):  # Sample up to 1000 items for speed
             _, y = test_dataset[i]
             test_labels.append(y.item())
         
@@ -1179,6 +1171,10 @@ class DTULoader(torch.utils.data.Dataset):
 
         channels, patches, time_per_patch = X.shape
 
+
+        ##### THIS CODE NEEDS TO BE UNCOMMENTED TO TRAIN ON POWER SPECTRUM. THIS DOES NOT SEEM TO WORK WELL THOUGH
+        # additionally, you need to change some other code so you dont overwrite the x_tensor
+
         # # for computing power spectrum  
         # X_power = np.zeros((channels, patches, time_per_patch))    
         # for ch in range(channels):
@@ -1197,12 +1193,15 @@ class DTULoader(torch.utils.data.Dataset):
         # combined_tensor = torch.cat([X_raw_tensor, X_tensor], dim=1)
         # combined_tensor = torch.FloatTensor(combined_tensor)
 
+
+        ####
+        
         X_tensor = torch.FloatTensor(X.reshape(channels,patches*time_per_patch))
         if type == "train":
             X_tensor = self._time_shift_patches(X_tensor,max_shift=199)
         else:
             pass
-        y_tensor = torch.FloatTensor([y]).squeeze()  # This makes it [1] instead of [1,1]
+        y_tensor = torch.FloatTensor([y]).squeeze()
         return X_tensor , y_tensor
 
     def _time_shift_patches(self, X, max_shift=199):
@@ -1219,9 +1218,10 @@ class DTULoader(torch.utils.data.Dataset):
         # Ensure we don't exceed the available time points
         if shift + points_to_keep <= time_points:
             X_shifted = X[:, shift:shift + points_to_keep]
+            #this is similar to what they do in PBT
         else:
             # Handle edge case where shift pushes beyond available data
-            # This shouldn't happen with your parameters, but included for safety
+            # This shouldn't actually happen with your parameters, but included for safety
             remaining = shift + points_to_keep - time_points
             X_shifted = torch.cat([X[:, shift:, :], 
                                 torch.zeros((channels, remaining, 1))], dim=1)
@@ -1230,8 +1230,9 @@ class DTULoader(torch.utils.data.Dataset):
     
     def _apply_bandpass_filter(self, data, low_freq, high_freq):
         """
-        Apply bandpass filter to EEG data.
-        
+        Apply bandpass filter to EEG data. This can be useful if you want to filter the betaband. In general it doesn't seem
+        to improve the model filtering away data
+
         Args:
             data: numpy array of shape (channels, patches, time_per_patch)
             low_freq: low cutoff frequency in Hz
@@ -1274,20 +1275,7 @@ class DTULoader(torch.utils.data.Dataset):
             return True  # Participant 3 not involved in T12
         else:
             return False  # Group condition for this participant
-    
-    
-def linear_regression_loss(output, target):
-    """
-    Mean squared error loss for linear regression problems.
-    
-    Args:
-        output: Predictions from the model
-        target: Ground truth values
-    
-    Returns:
-        MSE loss
-    """
-    return torch.mean((output - target) ** 2)
+        
 
 def prepare_DTU_data(root, condition=["feedback"], filter_feedback_only=None, 
                      filter_non_feedback_only=None, filter_non_participant=True):
@@ -1318,7 +1306,7 @@ def prepare_DTU_data(root, condition=["feedback"], filter_feedback_only=None,
         type="test"
     )
     
-    # # Print class distribution statistics
+    # # Print class distribution statistics. Just activate this to check the true rate.
     # print("Dataset class distribution after filtering:")
     
     # # For training set
@@ -1350,10 +1338,6 @@ def prepare_DTU_data(root, condition=["feedback"], filter_feedback_only=None,
     
     return train_dataset, test_dataset
 
-"""""
-Malte and Magnus' code ends here
-
-"""""
 
 def get_metrics(output, target, metrics, is_binary, threshold=0.5):
     if is_binary:
@@ -1377,6 +1361,10 @@ def get_metrics(output, target, metrics, is_binary, threshold=0.5):
         )
     return results
 
+
+# This is pretty shitty code to be honest. I was confused when i made it and now i dont want to clean it up
+# It takes a set and refers to other names that i thought were the needed names. Turns out we already had the accurate names
+# so i just return the keys to the list lol
 def get_channel_names():
     channel_mapping = {
     'Fp1': 'EEG FP1-REF', 'AF7': 'EEG AF7-REF', 'AF3': 'EEG AF3-REF', 'F1': 'EEG F1-REF',

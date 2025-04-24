@@ -24,7 +24,8 @@
 #BSUB -gpu "num=1:mode=exclusive_process"
 # -- Specify the distribution of the cores: on a single node --
 #BSUB -R "span[hosts=1]"
-# -- end of LSF options -- 
+# -- end of LSF options -- t
+
 
 # Create log directories if they don't exist
 mkdir -p ./log/finetune_dtu_base/solovsgroup
