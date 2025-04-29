@@ -99,7 +99,7 @@ def plot_ERD(psds_dict, ax):
     ax.set_ylim(0.5,1.3)
     ax.set_xlim(-0.01,4)
 
-def plot_spectrogram_on_ax(psd_list, freqs, ax=0):
+def plot_spectrogram_on_ax(psd_list, freqs = np.arange(1,41), ax=0):
     n_times = psd_list.shape[1]
     time_vector = np.linspace(-0.5, 5.5, n_times)
     start_idx = np.argmin(np.abs(time_vector - 0))
@@ -132,52 +132,53 @@ ch_grid_dict = {                                       'Fp1':(2.7,0), 'Fpz':(4,0
 # Parameters
 mne.set_log_level('warning')
 window = 1
-settings = ['T1P', 'T1Pn']
+settings = ['T3Pn', 'T3Pn']
 overlap = 0.9
-epochs = epochs_df['Epochs'][:2]
-band = [8,12]
+epochs = epochs_df['Epochs']
+# band = [12,35]
 
-# ERD Grid Plot
-handles, labels = None, None
+for band in [[4,8], [8,12], [12,35], [1,40]]:
+    # ERD Grid Plot
+    handles, labels = None, None
 
-# Define grid size based on your ch_grid_dict
-n_cols = max(pos[0] for pos in ch_grid_dict.values()) + 1
-n_rows = max(pos[1] for pos in ch_grid_dict.values()) + 1
+    # Define grid size based on your ch_grid_dict
+    n_cols = max(pos[0] for pos in ch_grid_dict.values()) + 1
+    n_rows = max(pos[1] for pos in ch_grid_dict.values()) + 1
 
-fig = plt.figure(figsize=(11, 8))
+    fig = plt.figure(figsize=(11, 8))
 
-for ch, (x, y) in tqdm(ch_grid_dict.items(), desc=f'Creating ERD grid, with frequency band: {band}, and settings: {settings}'):
+    for ch, (x, y) in tqdm(ch_grid_dict.items(), desc=f'Creating ERD grid, with frequency band: {band}, and settings: {settings}'):
     
-    psds = get_psds_for_channel(participants_data=epochs, overlap=overlap, channel=ch, band=band, window=window, settings=settings);
-    # Normalize positions to [0, 1] figure coordinates
-    top_margin = 0.08 
-    ax_width = 1 / n_cols
-    ax_height = (1 - top_margin) / n_rows
+        psds = get_psds_for_channel(participants_data=epochs, overlap=overlap, channel=ch, band=band, window=window, settings=settings);
+        # Normalize positions to [0, 1] figure coordinates
+        top_margin = 0.08 
+        ax_width = 1 / n_cols
+        ax_height = (1 - top_margin) / n_rows
 
-    left = x * ax_width
-    bottom = 1 - top_margin - (y + 1) * ax_height
+        left = x * ax_width
+        bottom = 1 - top_margin - (y + 1) * ax_height
     
-    ax = fig.add_axes([left, bottom, ax_width, ax_height])
-    plot_ERD(psds, ax)
-    ax.text(0.5, 0.95, ch, ha='center', va='top', transform=ax.transAxes, fontsize=10)
-    ax.set_xticks([])
-    ax.set_yticks([])
+        ax = fig.add_axes([left, bottom, ax_width, ax_height])
+        plot_ERD(psds, ax)
+        ax.text(0.5, 0.95, ch, ha='center', va='top', transform=ax.transAxes, fontsize=10)
+        ax.set_xticks([])
+        ax.set_yticks([])
     
-    if handles is None and labels is None:  # Capture legend once
-        handles, labels = ax.get_legend_handles_labels()
+        if handles is None and labels is None:  # Capture legend once
+            handles, labels = ax.get_legend_handles_labels()
 
-# General legend
-fig.legend(handles, labels, loc='upper right', bbox_to_anchor=(1.1, 1), fontsize=12)
+    # General legend
+    fig.legend(handles, labels, loc='upper right', bbox_to_anchor=(1, 1), fontsize=12)
 
-plt.suptitle('ERD plots for all channels', fontsize=16)
-fig.savefig('erd_grid_plot.png', dpi=300)
-plt.close(fig)
+    plt.suptitle('ERD plots for all channels', fontsize=16)
+    fig.savefig(f'erd_grid_plot_group_f_nf_{band[0]}_{band[1]}.png', dpi=300)
+    plt.close(fig)
 
 # Plot Spectrogram
 mpl.rcParams['image.cmap'] = 'viridis'
 fig = plt.figure(figsize=(11, 8))
-axes = []  # collect all axes here
-ims = []
+axes = []  # to collect axes
+ims = []   # to collect plots 
 band = [1,40]
 global_max, global_min = -np.inf, np.inf
 for ch, (x, y) in tqdm(ch_grid_dict.items(), desc=f'Creating spectrogram grid, with frequency band: {band}, and settings: {settings}'):
@@ -194,7 +195,7 @@ for ch, (x, y) in tqdm(ch_grid_dict.items(), desc=f'Creating spectrogram grid, w
     bottom = 1 - top_margin - (y + 1) * ax_height
     
     ax = fig.add_axes([left, bottom, ax_width, ax_height])
-    im = plot_Spectrogram_on_ax(diff_psds, ax = ax)
+    im = plot_spectrogram_on_ax(diff_psds, ax = ax)
     ims.append(im)    # Collect image for rescaling later
     axes.append(ax)   # Collect axes
 
@@ -223,5 +224,5 @@ cbar = fig.colorbar(ims[0], ax=axes, location='right', shrink=0.9)
 cbar.set_label('Power Difference (DB)')
 
 plt.suptitle("Spectrogram plots for all channels", fontsize=16)
-fig.savefig('Spectrogram_grid_plot.png', dpi=300)
+fig.savefig('Spectrogram_grid_plot_solo_group_nf.png', dpi=300)
 plt.close(fig)
