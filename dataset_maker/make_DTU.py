@@ -441,16 +441,16 @@ if __name__ == "__main__":
     root_dir = os.path.dirname(script_dir)  # Assuming script is one level below project root
     
     # Path to data directory
-    data_dir = os.path.join(root_dir, "DTUDATA", "FG_Data")
+    data_dir = os.path.join(root_dir, "FG_Data")
     
     # Specific paths
-    eeg_folder_path = "/work3/s224183/PreprocessedEEGData/"
-    overview_path = os.path.join(data_dir, "FG_overview_df_v2.pkl")
-    behavior_path = os.path.join(data_dir, "Beh_feat_df_v2.pkl")
+    eeg_folder_path = "/work3/s224188/FG_Data/PreprocessedEEGData/"
+    overview_path = "/work3/s224188/FG_Data/FG_overview_df_v2.pkl"
+    behavior_path = "/work3/s224188/FG_Data/Beh_feat_df_v2.pkl"
     
     # Output paths
-    processed_dir = "/work3/s224183/processed"
-    output_dir = "/work3/s224183/LaBraM_data"
+    processed_dir = "/work3/s224188/processed"
+    output_dir = "/work3/s224188/LaBraM_data"
     
     # Create output directories
     os.makedirs(processed_dir, exist_ok=True)
