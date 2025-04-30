@@ -14,12 +14,9 @@ import torch
 from timm.utils import ModelEma
 import utils
 from einops import rearrange
-from sklearn.metrics import r2_score, mean_squared_error
-
 
 def train_class_batch(model, samples, target, criterion, ch_names):
     outputs = model(samples, ch_names)
-    
     loss = criterion(outputs, target)
     return loss, outputs
 
@@ -155,67 +152,59 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
 
 
 @torch.no_grad()
-def evaluate(data_loader, model, device, header='Test:', ch_names=None, 
-             metrics=['acc'], is_binary=True):
+def evaluate(data_loader, model, device, header='Test:', ch_names=None, metrics=['acc'], is_binary=True):
     input_chans = None
     if ch_names is not None:
         input_chans = utils.get_input_chans(ch_names)
-    
-
     if is_binary:
         criterion = torch.nn.BCEWithLogitsLoss()
     else:
         criterion = torch.nn.CrossEntropyLoss()
 
     metric_logger = utils.MetricLogger(delimiter="  ")
+    #header = 'Test:'
 
     # switch to evaluation mode
     model.eval()
-    
-    all_preds = []
-    all_targets = []
-    
+    pred = []
+    true = []
     for step, batch in enumerate(metric_logger.log_every(data_loader, 10, header)):
         EEG = batch[0]
         target = batch[-1]
         EEG = EEG.float().to(device, non_blocking=True)
         EEG = rearrange(EEG, 'B N (A T) -> B N A T', T=200)
         target = target.to(device, non_blocking=True)
-
+        if is_binary:
+            target = target.float().unsqueeze(-1)
+        
         # compute output
         with torch.cuda.amp.autocast():
             output = model(EEG, input_chans=input_chans)
-            
             loss = criterion(output, target)
         
         if is_binary:
             output = torch.sigmoid(output).cpu()
         else:
             output = output.cpu()
-        
         target = target.cpu()
-        
-        all_preds.append(output)
-        all_targets.append(target)
-        
-        batch_size = EEG.shape[0]
-        metric_logger.update(loss=loss.item())
-        
-        # Calculate batch-level metrics if available
 
         results = utils.get_metrics(output.numpy(), target.numpy(), metrics, is_binary)
+        pred.append(output)
+        true.append(target)
+
+        batch_size = EEG.shape[0]
+        metric_logger.update(loss=loss.item())
         for key, value in results.items():
             metric_logger.meters[key].update(value, n=batch_size)
-    
-    # Gather the stats from all processes
+        #metric_logger.meters['acc5'].update(acc5.item(), n=batch_size)
+    # gather the stats from all processes
     metric_logger.synchronize_between_processes()
+    print('* loss {losses.global_avg:.3f}'
+          .format(losses=metric_logger.loss))
     
-    # Concatenate all predictions and targets
-    all_preds = torch.cat(all_preds, dim=0).numpy()
-    all_targets = torch.cat(all_targets, dim=0).numpy()
-    
-    # Calculate metrics
-    ret = utils.get_metrics(all_preds, all_targets, metrics, is_binary, 0.5)
-        
+    pred = torch.cat(pred, dim=0).numpy()
+    true = torch.cat(true, dim=0).numpy()
+
+    ret = utils.get_metrics(pred, true, metrics, is_binary, 0.5)
     ret['loss'] = metric_logger.loss.global_avg
     return ret

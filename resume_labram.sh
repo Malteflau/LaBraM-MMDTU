@@ -53,12 +53,12 @@ python /zhome/ce/8/186807/Desktop/Labram/LaBraM-MMDTU/run_labram_finetuning.py \
     --lr 5e-4 \
     --warmup_epochs 5 \
     --clip_grad 3.0 \
-    --drop_path 0.1 \
+    --drop_path 0. \
     --layer_scale_init_value 0.1 \
     --opt_betas 0.9 0.98 \
     --opt_eps 1e-8 \
     --weight_decay 0.05 \
-    --epochs 100 \
+    --epochs 50 \
     --save_ckpt_freq 25 \
     --codebook_dim 64 \
     --gradient_accumulation_steps 1 \

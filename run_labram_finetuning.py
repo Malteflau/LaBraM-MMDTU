@@ -352,21 +352,18 @@ def main(args):
         
         if 'model' in checkpoint:
             model_dict = checkpoint['model']
-            # Remove the problematic key
+            # Remove any problematic keys
             if 'logit_scale' in model_dict:
                 print("Removing logit_scale from checkpoint")
                 del model_dict['logit_scale']
             
             # Load the modified state dict
-            model_without_ddp.load_state_dict(model_dict, strict=False)  # Use strict=False for safety
+            model_without_ddp.load_state_dict(model_dict, strict=False)
+            print("Model weights loaded successfully!")
+        
+        # We're skipping optimizer loading completely for fine-tuning
+        print("Skipping optimizer state loading for fine-tuning")
             
-        # Load optimizer state, etc. if needed
-        if 'optimizer' in checkpoint:
-            optimizer.load_state_dict(checkpoint['optimizer'])
-        if 'epoch' in checkpoint:
-            args.start_epoch = checkpoint['epoch'] + 1
-        if 'scaler' in checkpoint and loss_scaler is not None:
-            loss_scaler.load_state_dict(checkpoint['scaler'])
     else:
         # Use the normal auto_load_model function if not resuming
         utils.auto_load_model(

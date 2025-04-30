@@ -255,13 +255,26 @@ def get_dataset(args):
         #     filter_feedback_only=None,  # Only include trials with feedback
         #     #filter_non_participant=None  # Exclude trials where participant isn't involved
         # )
-        train_dataset, test_dataset = utils.prepare_DTU_data(
-            "/work3/s224183/LaBraM_data", 
-            condition=condition,
-            filter_feedback_only=filter_feedback_only, 
-            filter_non_feedback_only=filter_non_feedback_only,
-            filter_non_participant=True
+
+
+        # Beta band
+        filter_bands = [(12.5, 30)]  # Alpha and beta bands
+        train_dataset, test_dataset = utils.prepare_optimized_DTU_data(
+        "/work3/s224183/LaBraM_data",
+        condition=condition,
+        filter_bands=filter_bands,
+        filter_non_participant=False
         )
+
+
+        # train_dataset, test_dataset = utils.prepare_DTU_data(
+        #     "/work3/s224183/LaBraM_data", 
+        #     condition=condition,
+        #     filter_feedback_only=filter_feedback_only, 
+        #     filter_non_feedback_only=filter_non_feedback_only,
+        #     filter_non_participant=False
+        # )
+
         # Channel names for DTU dataset. Again this is pretty shitty code
         channel_mapping = {
             'Fp1': 'EEG FP1-REF', 'AF7': 'EEG AF7-REF', 'AF3': 'EEG AF3-REF', 'F1': 'EEG F1-REF',
@@ -282,7 +295,7 @@ def get_dataset(args):
             'P10': 'EEG P10-REF', 'PO8': 'EEG PO8-REF', 'PO4': 'EEG PO4-REF', 'O2': 'EEG O2-REF'
         }
         ch_names = [name.upper() for name in channel_mapping.keys()]
-        args.nb_classes = 1  # Binary classification for friend status
+        args.nb_classes = 1
         metrics = ["pr_auc", "roc_auc", "accuracy", "balanced_accuracy"]
 
     return train_dataset, test_dataset, ch_names, metrics
@@ -479,7 +492,7 @@ def main(args, ds_init):
         args.weight_decay, args.weight_decay_end, args.epochs, num_training_steps_per_epoch)
     print("Max WD = %.7f, Min WD = %.7f" % (max(wd_schedule_values), min(wd_schedule_values)))
 
-    elif args.nb_classes == 0:
+    if args.nb_classes == 0:
         criterion = torch.nn.BCEWithLogitsLoss()
     elif args.nb_classes == 1:
         criterion = torch.nn.BCEWithLogitsLoss()

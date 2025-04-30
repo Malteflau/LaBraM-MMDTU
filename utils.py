@@ -926,14 +926,17 @@ class TriadDataLoader(torch.utils.data.Dataset):
             print("WARNING: No valid triads found! Check your filtering criteria.")
     
     def _is_solo_condition(self, condition_str, participant_num):
-        """Helper to determine if this is a solo condition for this participant"""
-        if condition_str.startswith('T1P') and participant_num == 'P1':
-            return True
-        if condition_str.startswith('T1P') and participant_num == 'P2':
-            return True
-        if condition_str.startswith('T1P') and participant_num == 'P3':
-            return True
-        return False
+        """Helper method to determine if a trial is solo for this participant"""
+        if condition_str.startswith("T1") and not condition_str.startswith("T12") and not condition_str.startswith("T13"):
+            return True  # Direct solo condition
+        elif condition_str.startswith("T23") and participant_num == "P1":
+            return True  # Participant 1 not involved in T23
+        elif condition_str.startswith("T13") and participant_num == "P2":
+            return True  # Participant 2 not involved in T13
+        elif condition_str.startswith("T12") and participant_num == "P3":
+            return True  # Participant 3 not involved in T12
+        else:
+            return False  # Group condition for this participant
     
     def __len__(self):
         return len(self.valid_keys)
@@ -1142,6 +1145,8 @@ class DTULoader(torch.utils.data.Dataset):
             print(f"Warning: No valid samples found after filtering in {root}")
             # Fallback to using all files if filtering resulted in empty dataset
             self.valid_indices = list(range(len(files)))
+            
+
     
     def __len__(self):
         return len(self.valid_indices)
@@ -1149,10 +1154,10 @@ class DTULoader(torch.utils.data.Dataset):
     def __getitem__(self, index):
         file_index = self.valid_indices[index]
         file = self.files[file_index]
-        type = self.type
+        dataset_type = self.type
         sample = pickle.load(open(os.path.join(self.root, file), "rb"))
         X = sample["X"]
-
+        #X = self._apply_bandpass_filter(X,12.5,30)
         # Determine label based on condition
         if self.condition[0] == "feedback":
             y = sample["y"]  # Use pre-existing feedback label
@@ -1197,14 +1202,14 @@ class DTULoader(torch.utils.data.Dataset):
         ####
         
         X_tensor = torch.FloatTensor(X.reshape(channels,patches*time_per_patch))
-        if type == "train":
-            X_tensor = self._time_shift_patches(X_tensor,max_shift=199)
+        if dataset_type == "train":
+            X_tensor = self._time_shift_patches(X_tensor,max_shift=30)
         else:
             pass
         y_tensor = torch.FloatTensor([y]).squeeze()
         return X_tensor , y_tensor
 
-    def _time_shift_patches(self, X, max_shift=199):
+    def _time_shift_patches(self, X, max_shift=30):
         # Check the input shape
         channels, time_points = X.shape
         
@@ -1307,34 +1312,34 @@ def prepare_DTU_data(root, condition=["feedback"], filter_feedback_only=None,
     )
     
     # # Print class distribution statistics. Just activate this to check the true rate.
-    # print("Dataset class distribution after filtering:")
+    print("Dataset class distribution after filtering:")
     
     # # For training set
-    # train_labels = []
-    # for i in range(len(train_dataset)):
-    #     _, y = train_dataset[i]
-    #     if hasattr(y, 'item'):
-    #         train_labels.append(y.item())
-    #     else:
-    #         train_labels.append(int(y))
+    train_labels = []
+    for i in range(200):
+        _, y = train_dataset[i]
+        if hasattr(y, 'item'):
+            train_labels.append(y.item())
+        else:
+            train_labels.append(int(y))
     
-    # train_counts = np.bincount(train_labels)
-    # train_total = len(train_labels)
-    # print(f"Training set: Class 0: {train_counts[0]} ({train_counts[0]/train_total:.2%}), " 
-    #       f"Class 1: {train_counts[1]} ({train_counts[1]/train_total:.2%})")
+    train_counts = np.bincount(train_labels)
+    train_total = len(train_labels)
+    print(f"Training set: Class 0: {train_counts[0]} ({train_counts[0]/train_total:.2%}), " 
+          f"Class 1: {train_counts[1]} ({train_counts[1]/train_total:.2%})")
     
-    # test_labels = []
-    # for i in range(len(test_dataset)):
-    #     _, y = test_dataset[i]
-    #     if hasattr(y, 'item'):
-    #         test_labels.append(y.item())
-    #     else:
-    #         test_labels.append(int(y))
+    test_labels = []
+    for i in range(200):
+        _, y = test_dataset[i]
+        if hasattr(y, 'item'):
+            test_labels.append(y.item())
+        else:
+            test_labels.append(int(y))
     
-    # test_counts = np.bincount(test_labels)
-    # test_total = len(test_labels)
-    # print(f"Training set: Class 0: {test_counts[0]} ({test_counts[0]/test_total:.2%}), " 
-    #       f"Class 1: {test_counts[1]} ({test_counts[1]/test_total:.2%})")
+    test_counts = np.bincount(test_labels)
+    test_total = len(test_labels)
+    print(f"Training set: Class 0: {test_counts[0]} ({test_counts[0]/test_total:.2%}), " 
+          f"Class 1: {test_counts[1]} ({test_counts[1]/test_total:.2%})")
     
     return train_dataset, test_dataset
 
@@ -1386,3 +1391,357 @@ def get_channel_names():
     }
     ch_names = [name.upper() for name in channel_mapping.keys()]
     return [ch_names]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+class OptimizedDTULoader(torch.utils.data.Dataset):
+    def __init__(self, root, files, sampling_rate=200, condition=["feedback"], 
+                 filter_feedback_only=None, filter_non_feedback_only=None, 
+                 filter_non_participant=True, type="train", filter_bands=None):
+        """
+        Enhanced DTU loader with pre-computed filtered data for better performance.
+        
+        Args:
+            root: Root directory containing dataset files
+            files: List of filenames
+            sampling_rate: Sampling rate for the EEG data
+            condition: Which condition to use as labels ["feedback", "friendship", "sologroup", "gender"]
+            filter_feedback_only: If True, only include samples with feedback
+            filter_non_feedback_only: If True, only include samples without feedback
+            filter_non_participant: If True, filter out samples where the participant is not involved
+            type: Dataset type ("train" or "test")
+            filter_bands: List of frequency bands to pre-compute, each as (low_freq, high_freq) tuples
+                          e.g. [(8, 12), (12.5, 30)] for alpha and beta bands
+        """
+        self.root = root
+        self.files = files
+        self.default_rate = 200
+        self.sampling_rate = sampling_rate
+        self.filter_feedback_only = filter_feedback_only
+        self.filter_non_feedback_only = filter_non_feedback_only
+        self.filter_non_participant = filter_non_participant
+        self.condition = condition
+        self.type = type
+        self.filter_bands = filter_bands or []
+        
+        # Initialize cache directories for filtered data
+        self.cache_dir = os.path.join(root, f"_filtered_cache_{type}")
+        if self.filter_bands and not os.path.exists(self.cache_dir):
+            os.makedirs(self.cache_dir, exist_ok=True)
+        
+        # Find valid indices based on filtering criteria
+        self._find_valid_indices()
+        
+        # Pre-compute filtered data if needed
+        if self.filter_bands:
+            self._precompute_filtered_data()
+    
+    def _find_valid_indices(self):
+        """Scan through files to find valid indices based on filtering criteria."""
+        self.valid_indices = []
+        self.valid_files = []
+        self.sample_metadata = []
+        
+        for i, file in enumerate(self.files):
+            try:
+                with open(os.path.join(self.root, file), 'rb') as f:
+                    sample = pickle.load(f)
+                    
+                    # Check if the sample meets our filtering criteria
+                    keep_sample = True
+                    
+                    # Apply feedback filters if requested
+                    if self.filter_feedback_only is not None:
+                        has_feedback = sample.get("has_feedback", True)
+                        if self.filter_feedback_only and not has_feedback:
+                            keep_sample = False
+                        elif self.filter_non_feedback_only and has_feedback:
+                            keep_sample = False
+                    
+                    # Apply non-participant filter if requested
+                    if self.filter_non_participant and keep_sample:
+                        condition_str = sample.get("condition", "")
+                        participant_num = sample.get("participant_num", "")
+                        
+                        # Check specific conditions where participant is not involved
+                        if condition_str.startswith("T23") and participant_num == "P1":
+                            keep_sample = False
+                        elif condition_str.startswith("T13") and participant_num == "P2":
+                            keep_sample = False
+                        elif condition_str.startswith("T12") and participant_num == "P3":
+                            keep_sample = False
+                    
+                    if keep_sample:
+                        self.valid_indices.append(i)
+                        self.valid_files.append(file)
+                        
+                        # Store minimal metadata needed for label generation
+                        metadata = {
+                            "y": sample["y"],
+                            "friend_status": sample.get("friend_status", "No"),
+                            "condition": sample.get("condition", ""),
+                            "participant_num": sample.get("participant_num", ""),
+                            "gender": sample.get("gender", "F"),
+                        }
+                        self.sample_metadata.append(metadata)
+                        
+            except Exception as e:
+                print(f"Error reading file {file}: {e}")
+        
+        if len(self.valid_indices) == 0:
+            print(f"Warning: No valid samples found after filtering in {self.root}")
+            # Fallback to using all files if filtering resulted in empty dataset
+            self.valid_indices = list(range(len(self.files)))
+            self.valid_files = self.files.copy()
+            self.sample_metadata = [{"y": 0}] * len(self.files)  # Default metadata
+
+    def _precompute_filtered_data(self):
+        """Precompute filtered data for all valid files to speed up data loading."""
+        from scipy import signal
+        import time
+        
+        print(f"Precomputing filtered data for {len(self.valid_files)} files...")
+        start_time = time.time()
+        
+        # Design the Butterworth bandpass filters for each band
+        fs = 200  # Sampling rate in Hz
+        nyq = 0.5 * fs
+        filters = {}
+        for band_idx, (low_freq, high_freq) in enumerate(self.filter_bands):
+            low = low_freq / nyq
+            high = high_freq / nyq
+            order = 4
+            b, a = signal.butter(order, [low, high], btype='band')
+            filters[band_idx] = (b, a)
+        
+        for i, file in enumerate(self.valid_files):
+            # Create a unique cache filename
+            cache_file = os.path.join(self.cache_dir, f"filtered_{i}.npz")
+            
+            # Skip if cache already exists
+            if os.path.exists(cache_file):
+                continue
+                
+            try:
+                # Load original data
+                with open(os.path.join(self.root, file), 'rb') as f:
+                    sample = pickle.load(f)
+                
+                X = sample["X"]  # Shape: (channels, patches, time_per_patch)
+                channels, patches, time_per_patch = X.shape
+                
+                # Initialize storage for filtered data
+                filtered_data = {}
+                
+                # Apply each filter
+                for band_idx, (low_freq, high_freq) in enumerate(self.filter_bands):
+                    b, a = filters[band_idx]
+                    band_data = np.zeros_like(X)
+                    
+                    # Apply filter to each channel and patch
+                    for ch in range(channels):
+                        for p in range(patches):
+                            band_data[ch, p, :] = signal.filtfilt(b, a, X[ch, p, :])
+                    
+                    # Store filtered data
+                    filtered_data[f"band_{band_idx}"] = band_data
+                
+                # Save to cache
+                np.savez_compressed(cache_file, **filtered_data)
+                
+                if (i+1) % 100 == 0:
+                    print(f"Processed {i+1}/{len(self.valid_files)} files")
+                    
+            except Exception as e:
+                print(f"Error processing file {file}: {e}")
+        
+        elapsed_time = time.time() - start_time
+        print(f"Finished precomputing filtered data in {elapsed_time:.2f} seconds")
+
+    def __len__(self):
+        return len(self.valid_indices)
+
+    def __getitem__(self, index):
+        file_index = self.valid_indices[index]
+        file = self.files[file_index]
+        metadata = self.sample_metadata[index]
+        
+        # Load original data
+        with open(os.path.join(self.root, file), 'rb') as f:
+            sample = pickle.load(f)
+        
+        X = sample["X"]
+        channels, patches, time_per_patch = X.shape
+        
+        # Determine which data representation to use
+        # If filter bands are specified, try to use the cached filtered data
+        if self.filter_bands:
+            cache_file = os.path.join(self.cache_dir, f"filtered_{index}.npz")
+            if os.path.exists(cache_file):
+                # Load filtered data from cache
+                filtered_data = np.load(cache_file)
+                
+                # Use the first band by default (can be customized)
+                X = filtered_data[f"band_0"]
+            else:
+                # Fallback to original data if cache doesn't exist
+                pass
+        
+        # Determine label based on condition
+        if self.condition[0] == "feedback":
+            y = metadata["y"]  # Use pre-existing feedback label
+        elif self.condition[0] == "friendship":
+            y = 1 if metadata["friend_status"] == "Yes" else 0
+        elif self.condition[0] == "sologroup":
+            # Determine if this is a solo trial for this participant
+            condition_str = metadata.get("condition", "")
+            participant_num = metadata.get("participant_num", "")
+            y = self._is_solo_condition(condition_str, participant_num)
+        elif self.condition[0] == "gender":
+            y = 1 if metadata["gender"] == "M" else 0
+        else:
+            # Default fallback to feedback label
+            y = metadata["y"]
+        
+        # Reshape data and convert to tensor
+        X_tensor = torch.FloatTensor(X.reshape(channels, patches * time_per_patch))
+        
+        # Apply time shift for training data
+        #if self.type == "train":
+        #    X_tensor = self._time_shift_patches(X_tensor, max_shift=199)
+        
+        y_tensor = torch.FloatTensor([y]).squeeze()
+        return X_tensor, y_tensor
+
+    def _time_shift_patches(self, X, max_shift=30):
+        """Apply random time shift to training data for augmentation."""
+        import random
+        
+        # Check the input shape
+        channels, time_points = X.shape
+        
+        # Generate a random shift between 0 and max_shift
+        shift = random.randint(0, max_shift)
+        
+        # Calculate how many time points we'll use (3 patches of 200 = 600)
+        points_to_keep = 600
+        
+        # Extract the shifted data window (shift : shift + points_to_keep)
+        # Ensure we don't exceed the available time points
+        if shift + points_to_keep <= time_points:
+            X_shifted = X[:, shift:shift + points_to_keep]
+        else:
+            # Handle edge case where shift pushes beyond available data
+            remaining = shift + points_to_keep - time_points
+            X_shifted = torch.cat([X[:, shift:], 
+                                torch.zeros((channels, remaining))], dim=1)
+        
+        return X_shifted
+    
+    def _is_solo_condition(self, condition_str, participant_num):
+        """Helper method to determine if a trial is solo for this participant."""
+        if condition_str.startswith("T1") and not condition_str.startswith("T12") and not condition_str.startswith("T13"):
+            return True  # Direct solo condition
+        elif condition_str.startswith("T23") and participant_num == "P1":
+            return True  # Participant 1 not involved in T23
+        elif condition_str.startswith("T13") and participant_num == "P2":
+            return True  # Participant 2 not involved in T13
+        elif condition_str.startswith("T12") and participant_num == "P3":
+            return True  # Participant 3 not involved in T12
+        else:
+            return False  # Group condition for this participant
+
+
+def prepare_optimized_DTU_data(root, condition=["feedback"], filter_feedback_only=None, 
+                     filter_non_feedback_only=None, filter_non_participant=True,
+                     filter_bands=None):
+    """
+    Prepare DTU datasets with optimized filtering.
+    
+    Args:
+        root: Root directory for data
+        condition: Which condition to use for labels
+        filter_feedback_only: If True, only include samples with feedback
+        filter_non_feedback_only: If True, only include samples without feedback
+        filter_non_participant: If True, filter out samples where participant is not involved
+        filter_bands: List of frequency bands to pre-compute, e.g. [(8, 12), (12.5, 30)]
+    
+    Returns:
+        train_dataset, test_dataset: PyTorch datasets for training and testing
+    """
+    seed = 12345
+    np.random.seed(seed)
+
+    # Get all files in each directory
+    train_files = os.listdir(os.path.join(root, "train"))
+    test_files = os.listdir(os.path.join(root, "test"))
+    
+    train_dataset = OptimizedDTULoader(
+        os.path.join(root, "train"), 
+        train_files,
+        condition=condition, 
+        filter_feedback_only=filter_feedback_only,
+        filter_non_feedback_only=filter_non_feedback_only,
+        filter_non_participant=filter_non_participant,
+        filter_bands=filter_bands,
+        type="train"
+    )
+    
+    test_dataset = OptimizedDTULoader(
+        os.path.join(root, "test"), 
+        test_files,
+        condition=condition, 
+        filter_feedback_only=filter_feedback_only,
+        filter_non_feedback_only=filter_non_feedback_only,
+        filter_non_participant=filter_non_participant,
+        filter_bands=filter_bands,
+        type="test"
+    )
+    
+    # Print class distribution statistics for a sample
+    print("Dataset class distribution after filtering:")
+    
+    # For training set
+    train_labels = []
+    for i in range(min(200, len(train_dataset))):
+        _, y = train_dataset[i]
+        if hasattr(y, 'item'):
+            train_labels.append(y.item())
+        else:
+            train_labels.append(int(y))
+    
+    train_counts = np.bincount(train_labels)
+    train_total = len(train_labels)
+    print(f"Training set sample: Class 0: {train_counts[0]} ({train_counts[0]/train_total:.2%}), " 
+          f"Class 1: {train_counts[1]} ({train_counts[1]/train_total:.2%})")
+    print(f"Full training set size: {len(train_dataset)}")
+    
+    # For test set
+    test_labels = []
+    for i in range(min(200, len(test_dataset))):
+        _, y = test_dataset[i]
+        if hasattr(y, 'item'):
+            test_labels.append(y.item())
+        else:
+            test_labels.append(int(y))
+    
+    test_counts = np.bincount(test_labels)
+    test_total = len(test_labels)
+    print(f"Test set sample: Class 0: {test_counts[0]} ({test_counts[0]/test_total:.2%}), " 
+          f"Class 1: {test_counts[1]} ({test_counts[1]/test_total:.2%})")
+    print(f"Full test set size: {len(test_dataset)}")
+    
+    return train_dataset, test_dataset
