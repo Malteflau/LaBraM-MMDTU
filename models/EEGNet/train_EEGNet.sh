@@ -1,11 +1,12 @@
 #!/bin/sh 
 ### General options 
 ### -- specify queue -- 
-#BSUB -q hpc
+#BSUB -q gpuv100
+#BSUB -gpu "num=1:mode=exclusive_process"
 ### -- set the job Name -- 
-#BSUB -J Create_data
+#BSUB -J train_eegnet_svsg
 ### -- ask for number of cores (default: 1) -- 
-#BSUB -n 4 
+#BSUB -n 4
 ### -- specify that the cores must be on the same host -- 
 #BSUB -R "span[hosts=1]"
 ### -- specify that we need 4GB of memory per core/slot -- 
@@ -24,17 +25,18 @@
 #BSUB -N 
 ### -- Specify the output and error file. %J is the job-id -- 
 ### -- -o and -e mean append, -oo and -eo mean overwrite -- 
-#BSUB -o Output_%J.out 
-#BSUB -e Output_%J.err 
+#BSUB -o Output_svsg_%J.out 
+#BSUB -e Output_svsg_%J.err 
 
+module load cuda/11.8
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$CUDA_HOME/extras/CUPTI/lib64:$LD_LIBRARY_PATH
 # Make conda available (add it to PATH)
 export PATH=/zhome/62/3/187432/anaconda3/bin:$PATH
-
 # Source the Conda shell hook manually
 source /zhome/62/3/187432/anaconda3/etc/profile.d/conda.sh
 
 # Activate your environment
-conda activate labram
+conda activate EEGNet
 
 # Run your script
-python3 dataset_maker/make_DTU.py
+python models/EEGNet/train_EEGNet.py
