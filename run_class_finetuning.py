@@ -183,6 +183,8 @@ def get_args():
                         help='Filter out trials where individual task is not involved')
     parser.add_argument('--filter_group_trials', action='store_true', default=False,
                     help='Filter out trials where individual task is not involved')
+    parser.add_argument('--use_metadata_emb', action='store_true', default=False,
+                    help='Use metadata embeddings for gender, feedback, solo/group, and friendship')
 
     known_args, _ = parser.parse_known_args()
 
@@ -215,6 +217,7 @@ def get_models(args):
         use_abs_pos_emb=args.abs_pos_emb,
         init_values=args.layer_scale_init_value,
         qkv_bias=args.qkv_bias,
+        use_metadata_emb=args.use_metadata_emb,
     )
 
     return model
@@ -283,7 +286,7 @@ def get_dataset(args):
             condition=condition,
             filter_feedback_only=filter_feedback_only, 
             filter_non_feedback_only=filter_non_feedback_only,
-            filter_non_participant=True,
+            filter_non_participant=False,
             filter_solo_trials=filter_solo_trials,
             filter_group_trials=filter_group_trials,
         )

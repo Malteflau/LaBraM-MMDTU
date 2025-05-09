@@ -265,30 +265,37 @@ class NeuralTransformer(nn.Module):
                  num_heads=10, mlp_ratio=4., qkv_bias=False, qk_norm=None, qk_scale=None, drop_rate=0., attn_drop_rate=0.,
                  drop_path_rate=0., norm_layer=nn.LayerNorm, init_values=None,
                  use_abs_pos_emb=True, use_rel_pos_bias=False, use_shared_rel_pos_bias=False,
-                 use_mean_pooling=True, init_scale=0.001, **kwargs):
+                 use_mean_pooling=True, init_scale=0.001, use_metadata_emb=False, **kwargs):
         super().__init__()
         self.num_classes = num_classes
         self.num_features = self.embed_dim = embed_dim  # num_features for consistency with other models
+        
+        # Add the metadata embedding flag
+        self.use_metadata_emb = use_metadata_emb
 
-        # To identify whether it is neural tokenizer or neural decoder. 
-        # For the neural decoder, use linear projection (PatchEmbed) to project codebook dimension to hidden dimension.
-        # Otherwise, use TemporalConv to extract temporal features from EEG signals.
+        # Normal initialization code...
         self.patch_embed = TemporalConv(out_chans=out_chans) if in_chans == 1 else PatchEmbed(EEG_size=EEG_size, patch_size=patch_size, in_chans=in_chans, embed_dim=embed_dim)
         self.time_window = EEG_size // patch_size
         self.patch_size = patch_size
 
         self.cls_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
-        # self.mask_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
         if use_abs_pos_emb:
             self.pos_embed = nn.Parameter(torch.zeros(1, 128 + 1, embed_dim), requires_grad=True)
         else:
             self.pos_embed = None
         self.time_embed = nn.Parameter(torch.zeros(1, 16, embed_dim), requires_grad=True)
+        
+        # Add only gender, feedback, and friendship embeddings (no solo_group)
+        if use_metadata_emb:
+            self.gender_embed = nn.Parameter(torch.zeros(1, 2, embed_dim), requires_grad=True)
+            self.feedback_embed = nn.Parameter(torch.zeros(1, 2, embed_dim), requires_grad=True)
+            self.friendship_embed = nn.Parameter(torch.zeros(1, 2, embed_dim), requires_grad=True)
+        
         self.pos_drop = nn.Dropout(p=drop_rate)
 
+        # Rest of the initialization code...
         self.rel_pos_bias = None
-
-        dpr = [x.item() for x in torch.linspace(0, drop_path_rate, depth)]  # stochastic depth decay rule
+        dpr = [x.item() for x in torch.linspace(0, drop_path_rate, depth)]
         self.use_rel_pos_bias = use_rel_pos_bias
         self.blocks = nn.ModuleList([
             Block(
@@ -300,12 +307,19 @@ class NeuralTransformer(nn.Module):
         self.fc_norm = norm_layer(embed_dim) if use_mean_pooling else None
         self.head = nn.Linear(embed_dim, num_classes) if num_classes > 0 else nn.Identity()
 
+        # Initialize embeddings
         if self.pos_embed is not None:
             trunc_normal_(self.pos_embed, std=.02)
         if self.time_embed is not None:
             trunc_normal_(self.time_embed, std=.02)
         trunc_normal_(self.cls_token, std=.02)
-        # trunc_normal_(self.mask_token, std=.02)
+        
+        # Initialize metadata embeddings (only the three we're using)
+        if use_metadata_emb:
+            trunc_normal_(self.gender_embed, std=.02)
+            trunc_normal_(self.feedback_embed, std=.02)
+            trunc_normal_(self.friendship_embed, std=.02)
+            
         if isinstance(self.head, nn.Linear):
             trunc_normal_(self.head.weight, std=.02)
         self.apply(self._init_weights)
@@ -334,10 +348,13 @@ class NeuralTransformer(nn.Module):
 
     def get_num_layers(self):
         return len(self.blocks)
-
+    
     @torch.jit.ignore
     def no_weight_decay(self):
-        return {'pos_embed', 'cls_token', 'time_embed'}
+        no_decay = {'pos_embed', 'cls_token', 'time_embed'}
+        if self.use_metadata_emb:
+            no_decay.update({'gender_embed', 'feedback_embed', 'friendship_embed'})
+        return no_decay
 
     def get_classifier(self):
         return self.head
@@ -346,27 +363,60 @@ class NeuralTransformer(nn.Module):
         self.num_classes = num_classes
         self.head = nn.Linear(self.embed_dim, num_classes) if num_classes > 0 else nn.Identity()
 
-    def forward_features(self, x, input_chans=None, return_patch_tokens=False, return_all_tokens=False, **kwargs):
+    def forward_features(self, x, input_chans=None, metadata=None, return_patch_tokens=False, return_all_tokens=False, **kwargs):
         batch_size, n, a, t = x.shape
         input_time_window = a if t == self.patch_size else t
         x = self.patch_embed(x)
 
-        cls_tokens = self.cls_token.expand(batch_size, -1, -1)  # stole cls_tokens impl from Phil Wang, thanks
-
+        cls_tokens = self.cls_token.expand(batch_size, -1, -1)
         x = torch.cat((cls_tokens, x), dim=1)
 
+        # Apply positional embedding
         pos_embed_used = self.pos_embed[:, input_chans] if input_chans is not None else self.pos_embed
         if self.pos_embed is not None:
             pos_embed = pos_embed_used[:, 1:, :].unsqueeze(2).expand(batch_size, -1, input_time_window, -1).flatten(1, 2)
             pos_embed = torch.cat((pos_embed_used[:,0:1,:].expand(batch_size, -1, -1), pos_embed), dim=1)
             x = x + pos_embed
+            
+        # Apply time embedding
         if self.time_embed is not None:
             nc = n if t == self.patch_size else a
             time_embed = self.time_embed[:, 0:input_time_window, :].unsqueeze(1).expand(batch_size, nc, -1, -1).flatten(1, 2)
             x[:, 1:, :] += time_embed
+        
+        # Apply metadata embeddings (only gender, feedback, and friendship)
+        if self.use_metadata_emb and metadata is not None:
+            gender = metadata.get('gender', None)  # Should be a tensor of shape [batch_size] with values 0 or 1
+            feedback = metadata.get('feedback', None)
+            friendship = metadata.get('friendship', None)
+            
+            # Apply each embedding that is provided
+            if gender is not None:
+                gender_idx = gender.view(-1, 1)
+                # Get embeddings for each sample in batch
+                batch_gender_emb = torch.zeros(batch_size, self.embed_dim, device=x.device)
+                for i in range(batch_size):
+                    batch_gender_emb[i] = self.gender_embed[0, gender_idx[i], :]
+                # Add to all tokens
+                x = x + batch_gender_emb.unsqueeze(1)
+                
+            if feedback is not None:
+                feedback_idx = feedback.view(-1, 1)
+                batch_feedback_emb = torch.zeros(batch_size, self.embed_dim, device=x.device)
+                for i in range(batch_size):
+                    batch_feedback_emb[i] = self.feedback_embed[0, feedback_idx[i], :]
+                x = x + batch_feedback_emb.unsqueeze(1)
+                
+            if friendship is not None:
+                friendship_idx = friendship.view(-1, 1)
+                batch_friendship_emb = torch.zeros(batch_size, self.embed_dim, device=x.device)
+                for i in range(batch_size):
+                    batch_friendship_emb[i] = self.friendship_embed[0, friendship_idx[i], :]
+                x = x + batch_friendship_emb.unsqueeze(1)
 
         x = self.pos_drop(x)
         
+        # Process through transformer blocks
         for blk in self.blocks:
             x = blk(x, rel_pos_bias=None)
         
@@ -387,14 +437,20 @@ class NeuralTransformer(nn.Module):
             else:
                 return x[:, 0]
 
-    def forward(self, x, input_chans=None, return_patch_tokens=False, return_all_tokens=False, **kwargs):
-        '''
-        x: [batch size, number of electrodes, number of patches, patch size]
-        For example, for an EEG sample of 4 seconds with 64 electrodes, x will be [batch size, 64, 4, 200]
-        '''
-        x = self.forward_features(x, input_chans=input_chans, return_patch_tokens=return_patch_tokens, return_all_tokens=return_all_tokens, **kwargs)
-        x = self.head(x)
-        return x
+    def forward(self, x, input_chans=None, metadata=None, return_patch_tokens=False, return_all_tokens=False, **kwargs):
+            '''
+            x: [batch size, number of electrodes, number of patches, patch size]
+            For example, for an EEG sample of 4 seconds with 64 electrodes, x will be [batch size, 64, 4, 200]
+            metadata: dictionary containing metadata flags:
+                - gender: tensor of shape [batch_size] with values 0 or 1
+                - feedback: tensor of shape [batch_size] with values 0 or 1
+                - friendship: tensor of shape [batch_size] with values 0 or 1
+            '''
+            x = self.forward_features(x, input_chans=input_chans, metadata=metadata, 
+                                    return_patch_tokens=return_patch_tokens, 
+                                    return_all_tokens=return_all_tokens, **kwargs)
+            x = self.head(x)
+            return x
 
     def forward_intermediate(self, x, layer_id=12, norm_output=False):
         x = self.patch_embed(x)

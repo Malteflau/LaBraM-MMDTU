@@ -15,8 +15,8 @@ from timm.utils import ModelEma
 import utils
 from einops import rearrange
 
-def train_class_batch(model, samples, target, criterion, ch_names):
-    outputs = model(samples, ch_names)
+def train_class_batch(model, samples, target, metadata, criterion, ch_names):
+    outputs = model(samples, ch_names, metadata=metadata)
     loss = criterion(outputs, target)
     return loss, outputs
 
@@ -48,7 +48,14 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
     else:
         optimizer.zero_grad()
 
-    for data_iter_step, (samples, targets) in enumerate(metric_logger.log_every(data_loader, print_freq, header)):
+    for data_iter_step, batch_data in enumerate(metric_logger.log_every(data_loader, print_freq, header)):
+        # Handle both formats - with and without metadata
+        if len(batch_data) == 3:
+            samples, targets, metadata_batch = batch_data
+        else:
+            samples, targets = batch_data
+            metadata_batch = None
+            
         step = data_iter_step // update_freq
         if step >= num_training_steps_per_epoch:
             continue
@@ -67,15 +74,24 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
         targets = targets.to(device, non_blocking=True)
         if is_binary:
             targets = targets.float().unsqueeze(-1)
+            
+        # Process metadata
+        if metadata_batch is not None:
+            metadata = {
+                k: v.to(device, non_blocking=True) 
+                for k, v in metadata_batch.items()
+            }
+        else:
+            metadata = None
 
         if loss_scaler is None:
             samples = samples.half()
             loss, output = train_class_batch(
-                model, samples, targets, criterion, input_chans)
+                model, samples, targets, metadata, criterion, input_chans)
         else:
             with torch.cuda.amp.autocast():
                 loss, output = train_class_batch(
-                    model, samples, targets, criterion, input_chans)
+                    model, samples, targets, metadata, criterion, input_chans)
 
         loss_value = loss.item()
 
@@ -162,24 +178,37 @@ def evaluate(data_loader, model, device, header='Test:', ch_names=None, metrics=
         criterion = torch.nn.CrossEntropyLoss()
 
     metric_logger = utils.MetricLogger(delimiter="  ")
-    #header = 'Test:'
 
     # switch to evaluation mode
     model.eval()
     pred = []
     true = []
-    for step, batch in enumerate(metric_logger.log_every(data_loader, 10, header)):
-        EEG = batch[0]
-        target = batch[-1]
-        EEG = EEG.float().to(device, non_blocking=True)
+    for step, batch_data in enumerate(metric_logger.log_every(data_loader, 10, header)):
+        # Handle both formats - with and without metadata
+        if len(batch_data) == 3:
+            EEG, target, metadata_batch = batch_data
+        else:
+            EEG, target = batch_data
+            metadata_batch = None
+            
+        EEG = EEG.float().to(device, non_blocking=True) / 100
         EEG = rearrange(EEG, 'B N (A T) -> B N A T', T=200)
         target = target.to(device, non_blocking=True)
         if is_binary:
             target = target.float().unsqueeze(-1)
+            
+        # Process metadata
+        if metadata_batch is not None:
+            metadata = {
+                k: v.to(device, non_blocking=True) 
+                for k, v in metadata_batch.items()
+            }
+        else:
+            metadata = None
         
         # compute output
         with torch.cuda.amp.autocast():
-            output = model(EEG, input_chans=input_chans)
+            output = model(EEG, input_chans=input_chans, metadata=metadata)
             loss = criterion(output, target)
         
         if is_binary:

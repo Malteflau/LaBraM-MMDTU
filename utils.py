@@ -1219,14 +1219,23 @@ class DTULoader(torch.utils.data.Dataset):
 
 
         ####
+        gender = 1 if sample.get("gender", "M") == "M" else 0
+        feedback = sample.get("y", 0)  # Assuming y is the feedback flag
+        friendship = 1 if sample.get("friend_status", "No") == "Yes" else 0
         
+        metadata = {
+            "gender": torch.LongTensor([gender]),
+            "feedback": torch.LongTensor([feedback]),
+            "friendship": torch.LongTensor([friendship])
+        }
+
         X_tensor = torch.FloatTensor(X.reshape(channels,patches*time_per_patch))
-        if dataset_type == "train":
-           X_tensor = self._time_shift_patches(X_tensor,max_shift=30)
-        else:
-           pass
+        # if dataset_type == "train":
+        #    X_tensor = self._time_shift_patches(X_tensor,max_shift=30)
+        # else:
+        #    pass
         y_tensor = torch.FloatTensor([y]).squeeze()
-        return X_tensor , y_tensor
+        return X_tensor , y_tensor, metadata
 
     def _time_shift_patches(self, X, max_shift=30):
         # Check the input shape
@@ -1331,31 +1340,36 @@ def prepare_DTU_data(root, condition=["feedback"], filter_feedback_only=None,
     #print("Dataset class distribution after filtering:")
     
     # # # For training set
-    # train_labels = []
-    # for i in range(200):
-    #     _, y = train_dataset[i]
-    #     if hasattr(y, 'item'):
-    #         train_labels.append(y.item())
-    #     else:
-    #         train_labels.append(int(y))
+    train_labels = []
+    for i in range(min(200, len(train_dataset))):
+        # Handle both old format (X, y) and new format (X, y, metadata)
+        data = train_dataset[i]
+        if isinstance(data, tuple) and len(data) >= 2:
+            y = data[1]  # Get y regardless of whether metadata is present
+            if hasattr(y, 'item'):
+                train_labels.append(y.item())
+            else:
+                train_labels.append(int(y))
     
-    # train_counts = np.bincount(train_labels)
-    # train_total = len(train_labels)
-    # print(f"Training set: Class 0: {train_counts[0]} ({train_counts[0]/train_total:.2%}), " 
-    #       f"Class 1: {train_counts[1]} ({train_counts[1]/train_total:.2%})")
+    train_counts = np.bincount(train_labels)
+    train_total = len(train_labels)
+    print(f"Training set: Class 0: {train_counts[0]} ({train_counts[0]/train_total:.2%}), " 
+          f"Class 1: {train_counts[1]} ({train_counts[1]/train_total:.2%})")
     
-    # test_labels = []
-    # for i in range(0,len(test_dataset)):
-    #     _, y = test_dataset[i]
-    #     if hasattr(y, 'item'):
-    #         test_labels.append(y.item())
-    #     else:
-    #         test_labels.append(int(y))
+    test_labels = []
+    for i in range(min(200, len(test_dataset))):
+        data = test_dataset[i]
+        if isinstance(data, tuple) and len(data) >= 2:
+            y = data[1]
+            if hasattr(y, 'item'):
+                test_labels.append(y.item())
+            else:
+                test_labels.append(int(y))
     
-    # test_counts = np.bincount(test_labels)
-    # test_total = len(test_labels)
-    # print(f"Test set: Class 0: {test_counts[0]} ({test_counts[0]/test_total:.2%}), " 
-    #       f"Class 1: {test_counts[1]} ({test_counts[1]/test_total:.2%})")
+    test_counts = np.bincount(test_labels)
+    test_total = len(test_labels)
+    print(f"Test set: Class 0: {test_counts[0]} ({test_counts[0]/test_total:.2%}), "
+          f"Class 1: {test_counts[1]} ({test_counts[1]/test_total:.2%})")
     
     return train_dataset, test_dataset
 
