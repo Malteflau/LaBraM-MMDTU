@@ -1,6 +1,6 @@
 #!/bin/bash
 #BSUB -J LaBraM_DTU_betaband_models
-#BSUB -q gpua100
+#BSUB -q gpuv100
 #BSUB -R "rusage[mem=3GB]"
 #BSUB -B
 #BSUB -N
@@ -20,7 +20,9 @@ BASE_MODEL="/zhome/ce/8/186807/Desktop/Labram/LaBraM-MMDTU/checkpoints/labram-ba
 HYBRID_MODEL="/zhome/ce/8/186807/Desktop/Labram/LaBraM-MMDTU/checkpoints/Final_models/finetune_original_vqnsp/checkpoint.pth"
 
 # Define conditions
-CONDITIONS=("sologroup" "friendship" "feedback" "gender")
+
+#CONDITIONS=("sologroup" "friendship" "feedback" "gender")
+CONDITIONS=("friendship")
 
 # Set resource limits
 ulimit -c unlimited
@@ -41,7 +43,7 @@ run_training() {
 
     echo "Running training for ${condition} with model ${model_name}..."
 
-    local output_dir="/zhome/ce/8/186807/Desktop/Labram/LaBraM-MMDTU/checkpoints/Final_models/${model_name}/${condition}"
+    local output_dir="/zhome/ce/8/186807/Desktop/Labram/LaBraM-MMDTU/checkpoints/Final_models/${model_name}/${condition}ts=30_normal_seed2"
     mkdir -p "${output_dir}"
     mkdir -p "./log/finetune_dtu_base/betaband_models/${model_name}/${condition}"
 
@@ -52,18 +54,17 @@ run_training() {
         --finetune "${model_path}" \
         --weight_decay 0.05 \
         --batch_size 64 \
-        --lr 5e-4 \
+        --lr 5e-5 \
         --update_freq 1 \
         --warmup_epochs 5 \
         --epochs 100 \
         --layer_decay 0.65 \
         --drop_path 0.1 \
-        --save_ckpt_freq 50 \
         --disable_rel_pos_bias \
         --abs_pos_emb \
         --dataset DTU \
         --disable_qkv_bias \
-        --seed 0 \
+        --seed 2 \
         --condition "${condition}"
 }
 
@@ -73,10 +74,10 @@ for condition in "${CONDITIONS[@]}"; do
     run_training "${BASE_MODEL}" "base_model_time_shifts" "${condition}"
 done
 
-# Run training for hybrid model
-echo "Starting training with hybrid model..."
-for condition in "${CONDITIONS[@]}"; do
-    run_training "${HYBRID_MODEL}" "hybrid_model_time_shifts" "${condition}"
-done
+# # Run training for hybrid model
+# echo "Starting training with hybrid model..."
+# for condition in "${CONDITIONS[@]}"; do
+#     run_training "${HYBRID_MODEL}" "hybrid_model_time_shifts" "${condition}"
+# done
 
-echo "All training runs completed."
+#echo "All training runs completed."

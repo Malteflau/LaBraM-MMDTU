@@ -34,7 +34,7 @@ BETABAND_BETABAND_MODEL="/zhome/ce/8/186807/Desktop/Labram/LaBraM-MMDTU/checkpoi
 BASE_BETABAND_MODEL="/zhome/ce/8/186807/Desktop/Labram/LaBraM-MMDTU/checkpoints/labram-base.pth"
 
 # Define conditions
-CONDITIONS=("sologroup" "friendship" "feedback" "gender")
+CONDITIONS=("gender")
 
 # Export unlimited file size for core dumps and stack traces
 ulimit -c unlimited
@@ -72,7 +72,6 @@ run_training() {
         --epochs 50 \
         --layer_decay 0.65 \
         --drop_path 0.1 \
-        --save_ckpt_freq 50 \
         --disable_rel_pos_bias \
         --abs_pos_emb \
         --dataset DTU \
@@ -85,12 +84,6 @@ run_training() {
 echo "Starting training with betaband on betaband..."
 for condition in "${CONDITIONS[@]}"; do
     run_training "${BETABAND_MODEL}" "betaband_on_betaband" "${condition}"
-done
-
-# Run training for base-on-betaband
-echo "Starting training with base on betaband..."
-for condition in "${CONDITIONS[@]}"; do
-    run_training "${BASE_MODEL}" "base_on_betaband" "${condition}"
 done
 
 echo "All training runs completed."

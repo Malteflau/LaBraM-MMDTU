@@ -43,23 +43,24 @@ conda activate labram
 
 # Run the training with full output logging
 python run_class_finetuning.py \
-    --output_dir ./checkpoints/finetune_dtu_base/feedback_lr5e49999922 \
+    --output_dir ./checkpoints/feedback_nopretrain \
     --log_dir ./log/finetune_dtu_base/feedback \
     --model labram_base_patch200_200 \
-    --finetune /zhome/ce/8/186807/Desktop/Labram/LaBraM-MMDTU/checkpoints/labram-base.pth \
+    --finetune '' \
     --weight_decay 0.05 \
     --batch_size 64 \
     --lr 5e-4 \
     --update_freq 1 \
     --warmup_epochs 5 \
-    --epochs 50 \
+    --epochs 200 \
     --layer_decay 0.65 \
     --drop_path 0.1 \
-    --save_ckpt_freq 5 \
     --disable_rel_pos_bias \
     --abs_pos_emb \
     --dataset DTU \
     --disable_qkv_bias \
     --seed 0
+
+
 
     

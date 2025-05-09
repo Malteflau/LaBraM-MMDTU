@@ -15,7 +15,8 @@ import glob
 base_dir = "/zhome/ce/8/186807/Desktop/Labram/LaBraM-MMDTU/checkpoints/Final_models"
 
 # Model names and conditions (reordered)
-model_names = ["Base setup", "Scratch setup", "Hybrid setup", "Majority Class Baseline"]
+#model_names = ["Base setup", "Scratch setup", "Hybrid setup", "Majority Class Baseline"]
+model_names = ["Base setup Time Shifts","Hybrid setup Time Shifts"]
 conditions = ["sologroup", "friendship", "feedback", "gender"]
 
 # Function to extract metrics from log files
@@ -85,14 +86,16 @@ model_color_map = {
     "Base setup": "#4a91e9",     # Blue
     "Scratch setup": "#f2993b",  # Orange
     "Hybrid setup": "#5fa55b",   # Green
-    "Majority Class Baseline": "#8e7cc3"       # Red (not in diagram, using a complementary color)
+    "Majority Class Baseline": "#8e7cc3",       # Red (not in diagram, using a complementary color)
+    "Base setup Time Shifts": "#4a91e9",     # Blue
+    "Hybrid setup Time Shifts": "#5fa55b",   # Green
 }
 
 # Create a list of colors in the same order as model_names
 colors = [model_color_map[model] for model in model_names]
 
 # Create output directories
-output_dir = "result_plots"
+output_dir = "result_plots_time_shifts"
 os.makedirs(output_dir, exist_ok=True)
 
 # Plot 1: Train Loss by Model for each Condition

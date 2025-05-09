@@ -1,0 +1,9 @@
+Model,Condition,Best Test Accuracy (%),Best Epoch,Final Train Accuracy (%)
+Base setup Time Shifts,sologroup,60.1,0,60.07
+Base setup Time Shifts,friendship,70.81,77,98.68
+Base setup Time Shifts,feedback,79.56,10,99.36
+Base setup Time Shifts,gender,89.18,43,98.71
+Hybrid setup Time Shifts,sologroup,60.1,0,81.99
+Hybrid setup Time Shifts,friendship,71.22,25,98.71
+Hybrid setup Time Shifts,feedback,78.19,79,98.87
+Hybrid setup Time Shifts,gender,83.16,26,98.66

@@ -147,7 +147,7 @@ def get_args():
     
     parser.add_argument('--save_ckpt', action='store_true')
     parser.add_argument('--no_save_ckpt', action='store_false', dest='save_ckpt')
-    parser.set_defaults(save_ckpt=True)
+    parser.set_defaults(save_ckpt=False)
 
     parser.add_argument('--start_epoch', default=0, type=int, metavar='N',
                         help='start epoch')
@@ -179,6 +179,10 @@ def get_args():
                         help='Filter by feedback: feedback (with feedback only), nofeedback (without feedback only)')
     parser.add_argument('--filter_non_participant', action='store_true', default=True,
                         help='Filter out trials where participant is not involved')
+    parser.add_argument('--filter_solo_trials', action='store_true', default=False,
+                        help='Filter out trials where individual task is not involved')
+    parser.add_argument('--filter_group_trials', action='store_true', default=False,
+                    help='Filter out trials where individual task is not involved')
 
     known_args, _ = parser.parse_known_args()
 
@@ -240,13 +244,20 @@ def get_dataset(args):
         
         filter_feedback_only = None  # Default to no filtering
         filter_non_feedback_only = None  # Default to no filtering
-        
+        filter_solo_trials = None  # Default to no filtering
+        filter_group_trials = None
         if args.filter_feedback == 'feedback':
             filter_feedback_only = True
             filter_non_feedback_only = False
         elif args.filter_feedback == 'nofeedback':
             filter_feedback_only = False
             filter_non_feedback_only = True
+        if args.filter_solo_trials:
+            filter_solo_trials = True
+        else:
+            filter_solo_trials = False
+        if args.filter_group_trials:
+            filter_group_trials = True
         
         # ACTIVATE THIS CODE IF YOU WANT TO CONCATENATE THE DATA IN THE TRIAD. Gets higher accuracy but still doesn't work
         # train_dataset, test_dataset = prepare_DTU_triad_data(
@@ -257,23 +268,25 @@ def get_dataset(args):
         # )
 
 
-        # Beta band
-        filter_bands = [(12.5, 30)]  # Alpha and beta bands
-        train_dataset, test_dataset = utils.prepare_optimized_DTU_data(
-        "/work3/s224183/LaBraM_data",
-        condition=condition,
-        filter_bands=filter_bands,
-        filter_non_participant=False
-        )
-
-
-        # train_dataset, test_dataset = utils.prepare_DTU_data(
-        #     "/work3/s224183/LaBraM_data", 
-        #     condition=condition,
-        #     filter_feedback_only=filter_feedback_only, 
-        #     filter_non_feedback_only=filter_non_feedback_only,
-        #     filter_non_participant=False
+        # # Beta band
+        # filter_bands = [(12.5, 30)]  # Alpha and beta bands
+        # train_dataset, test_dataset = utils.prepare_optimized_DTU_data(
+        # "/work3/s224183/LaBraM_data",
+        # condition=condition,
+        # filter_bands=filter_bands,
+        # filter_non_participant=False
         # )
+
+
+        train_dataset, test_dataset = utils.prepare_DTU_data(
+            "/work3/s224183/LaBraM_data", 
+            condition=condition,
+            filter_feedback_only=filter_feedback_only, 
+            filter_non_feedback_only=filter_non_feedback_only,
+            filter_non_participant=True,
+            filter_solo_trials=filter_solo_trials,
+            filter_group_trials=filter_group_trials,
+        )
 
         # Channel names for DTU dataset. Again this is pretty shitty code
         channel_mapping = {

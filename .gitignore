@@ -5,4 +5,28 @@ ExperimentalSetup/__pycache__/dataloader.cpython-311.pyc
 LaBraM_data/
 processed/
 log/
-checkpoints/
+*.pth
+*.pt
+*.ckpt
+*.bin
+!/checkpoints/*.txt
+!/checkpoints/*/*.txt
+
+./checkpoints/dtu_vqnsp_raw_power/labram_UNSURE/checkpoint-49.pth
+./checkpoints/dtu_vqnsp_raw_power/labram_UNSURE/checkpoint.pth
+./checkpoints/dtu_vqnsp_raw_power/labram_UNSURE/checkpoint-24.pth
+./checkpoints/dtu_vqnsp_raw_power/checkpoint-98.pth
+./checkpoints/pretrain_powerspectrum/checkpoint.pth
+./checkpoints/vqnsp.pth
+./checkpoints/finetune_dtu_vqnsp/checkpoint.pth
+./checkpoints/dtu_vqnsp_betaband/checkpoint-98.pth
+./checkpoints/labram-base.pth
+./checkpoints/power_spec_real/labram/checkpoint.pth
+./checkpoints/Final_models/finetune_original_vqnsp/checkpoint.pth
+./checkpoints/Final_models/pretrain_betaband/checkpoint.pth
+./checkpoints/Final_models/Scratch setup/sologroup/checkpoint-49.pth
+./checkpoints/Final_models/Scratch setup/sologroup/checkpoint.pth
+./checkpoints/Final_models/Scratch setup/sologroup/checkpoint-best.pth
+./checkpoints/RawAndPSpec_Final/checkpoint.pth
+./checkpoints/dtu_vqnsp_powerspectrum/checkpoint-98.pth
+./DTUDATA/FG_Data/Force_df_v2.pkl

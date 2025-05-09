@@ -1,7 +1,7 @@
 #!/bin/bash
 # embedded options to bsub - start with #BSUB
 # -- our name ---
-#BSUB -J LaBraM_DTU_solovsgroup_50epoch
+#BSUB -J LaBraM_DTU_friendship_50epoch
 # -- choose queue --
 #BSUB -q gpua100
 # -- specify that we need 4GB of memory per core/slot --
@@ -28,8 +28,6 @@
 
 
 # Create log directories if they don't exist
-mkdir -p ./log/finetune_dtu_base/solovsgroup
-mkdir -p ./checkpoints/finetune_dtu_base/sologroup_betafilter1 \
 
 # Export unlimited file size for core dumps and stack traces
 ulimit -c unlimited
@@ -44,8 +42,8 @@ conda activate labram
 
 # Run the training with full output logging
 python run_class_finetuning.py \
-    --output_dir ./checkpoints/finetune_dtu_base/testest \
-    --log_dir ./log/finetune_dtu_base/testtest \
+    --output_dir /zhome/ce/8/186807/Desktop/Labram/LaBraM-MMDTU/checkpoints/Final_models/base_model_time_shifts \
+    --log_dir ./log/finetune_dtu_indiv \
     --model labram_base_patch200_200 \
     --finetune /zhome/ce/8/186807/Desktop/Labram/LaBraM-MMDTU/checkpoints/labram-base.pth \
     --weight_decay 0.05 \
@@ -53,7 +51,7 @@ python run_class_finetuning.py \
     --lr 5e-4 \
     --update_freq 1 \
     --warmup_epochs 5 \
-    --epochs 50 \
+    --epochs 100 \
     --layer_decay 0.65 \
     --drop_path 0.1 \
     --save_ckpt_freq 25 \
@@ -61,8 +59,8 @@ python run_class_finetuning.py \
     --abs_pos_emb \
     --dataset DTU \
     --disable_qkv_bias \
-    --seed 0 \
-    --condition feedback
+    --condition friendship \
+    --filter_group_trials
 
 #####condition: (["sologroup","friendship","feedback","gender"])
 #filter_feedback(["all", "feedback","nofeedback"])

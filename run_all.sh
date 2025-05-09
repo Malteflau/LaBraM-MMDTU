@@ -75,7 +75,6 @@ run_training() {
         --epochs 50 \
         --layer_decay 0.65 \
         --drop_path 0.1 \
-        --save_ckpt_freq 50 \
         --disable_rel_pos_bias \
         --abs_pos_emb \
         --dataset DTU \
