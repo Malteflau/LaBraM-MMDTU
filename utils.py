@@ -1222,18 +1222,22 @@ class DTULoader(torch.utils.data.Dataset):
         gender = 1 if sample.get("gender", "M") == "M" else 0
         feedback = sample.get("y", 0)  # Assuming y is the feedback flag
         friendship = 1 if sample.get("friend_status", "No") == "Yes" else 0
+        solo_group = 1 if self._is_solo_condition(sample.get("condition_type", ""), sample.get("participant_num", "")) else 0
         
+        # This is not pretty, but friendship and solo_group will be interchangable conditions
+        # If solo_group is test target, then friendship is metadata and vice versa
+
         metadata = {
             "gender": torch.LongTensor([gender]),
             "feedback": torch.LongTensor([feedback]),
-            "friendship": torch.LongTensor([friendship])
+            "friendship": torch.LongTensor([solo_group])
         }
 
         X_tensor = torch.FloatTensor(X.reshape(channels,patches*time_per_patch))
-        # if dataset_type == "train":
-        #    X_tensor = self._time_shift_patches(X_tensor,max_shift=30)
-        # else:
-        #    pass
+        if dataset_type == "train":
+           X_tensor = self._time_shift_patches(X_tensor,max_shift=100)
+        else:
+           pass
         y_tensor = torch.FloatTensor([y]).squeeze()
         return X_tensor , y_tensor, metadata
 

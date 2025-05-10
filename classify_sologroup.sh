@@ -42,7 +42,7 @@ conda activate labram
 
 # Run the training with full output logging
 python run_class_finetuning.py \
-    --output_dir /zhome/ce/8/186807/Desktop/Labram/LaBraM-MMDTU/checkpoints/LOLOLOLOlgender \
+    --output_dir /zhome/ce/8/186807/Desktop/Labram/LaBraM-MMDTU/checkpoints/metadata_training/friendship_with_metadata_and_timeshift=100 \
     --log_dir ./log/finetune_dtu_indiv \
     --model labram_base_patch200_200 \
     --finetune /zhome/ce/8/186807/Desktop/Labram/LaBraM-MMDTU/checkpoints/labram-base.pth \
@@ -51,14 +51,14 @@ python run_class_finetuning.py \
     --lr 5e-4 \
     --update_freq 1 \
     --warmup_epochs 5 \
-    --epochs 50 \
+    --epochs 100 \
     --layer_decay 0.65 \
     --drop_path 0.1 \
     --disable_rel_pos_bias \
     --abs_pos_emb \
     --dataset DTU \
     --disable_qkv_bias \
-    --condition gender \
+    --condition friendship \
     --use_metadata_emb
 
 

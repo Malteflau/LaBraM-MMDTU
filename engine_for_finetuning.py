@@ -191,7 +191,7 @@ def evaluate(data_loader, model, device, header='Test:', ch_names=None, metrics=
             EEG, target = batch_data
             metadata_batch = None
             
-        EEG = EEG.float().to(device, non_blocking=True) / 100
+        EEG = EEG.float().to(device, non_blocking=True)
         EEG = rearrange(EEG, 'B N (A T) -> B N A T', T=200)
         target = target.to(device, non_blocking=True)
         if is_binary:
