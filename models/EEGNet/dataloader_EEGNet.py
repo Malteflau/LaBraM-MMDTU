@@ -2,6 +2,7 @@ import os
 import pickle
 import numpy as np
 
+
 def load_eeg_data_from_pkl(directory, label_mode='feedback'):
     """
     Generalized EEG data loader with label modes:
@@ -28,25 +29,21 @@ def load_eeg_data_from_pkl(directory, label_mode='feedback'):
 
         # Filtering logic based on label_mode
         if label_mode == 'feedback':
-            print('Data labeled by feedback')
             label = int(has_feedback)
 
         elif label_mode == 'gender':
-            print('Data labeled by gender')
             if 'gender' not in sample or sample['gender'] not in ['M', 'F']:
                 continue
             label = 1 if sample['gender'] == 'M' else 0
 
-        elif label_mode == 'solo_vs_group':
-            print('Data labeled by solo vs group')
+        elif label_mode == 'sologroup':
             if condition != 'T1P' and condition != 'T3P':
                 continue
             if not has_feedback:
                 continue
             label = 0 if condition == 'T1P' else 1
 
-        elif label_mode == 'friend_status':
-            print('Data labeled by friend status')
+        elif label_mode == 'friendship':
             if 'friend_status' not in sample:
                 continue
             if not has_feedback:

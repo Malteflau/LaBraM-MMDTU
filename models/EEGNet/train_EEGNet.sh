@@ -4,15 +4,15 @@
 #BSUB -q gpuv100
 #BSUB -gpu "num=1:mode=exclusive_process"
 ### -- set the job Name -- 
-#BSUB -J train_eegnet_svsg
+#BSUB -J train_eegnet_all
 ### -- ask for number of cores (default: 1) -- 
 #BSUB -n 4
 ### -- specify that the cores must be on the same host -- 
 #BSUB -R "span[hosts=1]"
 ### -- specify that we need 4GB of memory per core/slot -- 
-#BSUB -R "rusage[mem=8GB]"
+#BSUB -R "rusage[mem=16GB]"
 ### -- specify that we want the job to get killed if it exceeds 5 GB per core/slot -- 
-#BSUB -M 9GB
+#BSUB -M 16GB
 ### -- set walltime limit: hh:mm -- 
 #BSUB -W 24:00 
 ### -- set the email address -- 
@@ -25,8 +25,8 @@
 #BSUB -N 
 ### -- Specify the output and error file. %J is the job-id -- 
 ### -- -o and -e mean append, -oo and -eo mean overwrite -- 
-#BSUB -o Output_svsg_%J.out 
-#BSUB -e Output_svsg_%J.err 
+#BSUB -o Output_eegnet_all_%J.out 
+#BSUB -e Output_eegnet_all_%J.err 
 
 module load cuda/11.8
 export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$CUDA_HOME/extras/CUPTI/lib64:$LD_LIBRARY_PATH
