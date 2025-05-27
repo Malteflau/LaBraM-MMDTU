@@ -11,7 +11,6 @@ import matplotlib as mpl
 
 # --- mpl setup ---
 
-mpl.rcParams['image.cmap'] = 'viridis'
 plt.rcParams['axes.prop_cycle'] = plt.cycler(color=plt.cm.Set2(np.linspace(0, 1, 8)))
 # mpl.rcParams['font.family'] = 'Helvetica Neue'
 mpl.rcParams['figure.figsize'] = (6, 4)
@@ -51,30 +50,33 @@ n_epochs, n_channels, n_timepoints = epochs_df['Epochs'][0].get_data().shape
 
 def get_psds_for_channel(participants_data, channel, settings, window, band = [1,40], overlap = 0.75, mean = True):
     
-    overlap = int(window * sfreq * overlap) # scale overlap to window size
+    n_fft = int(sfreq*3/band[0]) if band[0] > 1 else 1
+    overlap = int(n_fft*overlap) # scale overlap to window size
     psd_dict = {}
+    
     for setting in settings:
         all_psds = []
-        for epochs in participants_data:
+        for epochs in tqdm(participants_data, desc=f'For condition: {setting}, for channel: {channel} with freq band: {band}'):
             # Pick channel 
             filtered_epochs = epochs.copy().load_data().pick([channel])
             filtered_epochs = filtered_epochs.filter(l_freq=band[0], h_freq=band[1], fir_design='firwin', n_jobs=10, verbose = False)
             filtered_epochs = filtered_epochs[setting]
             # Compute PSD
             psds = filtered_epochs.compute_psd(method='welch', window = 'hamming', average = None, 
-                                               fmin=band[0], fmax=band[1], n_fft=int(sfreq*window*2/band[0]), 
-                                               n_overlap=int(overlap*2/band[0]), n_jobs=10, verbose = False);
+                                               fmin=band[0], fmax=band[1], n_fft=n_fft, 
+                                               n_overlap=overlap, n_jobs=10, verbose = False);
             if mean:
                 mean_psds = np.array(psds.get_data().mean(axis=0).mean(axis = 1)).flatten()
                 # Standardize to baseline 
-                baseline = mean_psds[int(len(mean_psds)/20):int(len(mean_psds)/10)].mean() 
-                all_psds.append(mean_psds/baseline) # append the mean over epochs and frequencies to all psds
+                baseline_mean = mean_psds[int(len(mean_psds)/24):int(len(mean_psds)/12)].mean() # Dividing len(mean_psds) with 24 and 12 gives the index of -0.25s and 0s
+                baseline_corrected = mean_psds / baseline_mean
+                all_psds.append(baseline_corrected) # append the mean over epochs and frequencies to all psds
             else:
-                psds_list = np.array(psds.get_data().mean(axis=0))
-                baseline_snippet = psds_list[:, int(len(psds_list)/20):int(len(psds_list)/10) + 1]  # add 1 because Python slicing is exclusive
+                psds_list = np.array(psds.get_data().mean(axis=0))[0]
+                baseline_snippet = psds_list[:, int(len(psds_list[0])/24):int(len(psds_list[0])/12) + 1]
                 baseline_mean = np.mean(baseline_snippet, axis=1, keepdims=True)
-                log_ratio = 10 * np.log10(psds_list / baseline_mean)
-                all_psds.append(np.reshape(log_ratio, (len(log_ratio[0]),len(log_ratio[0][0]))))
+                baseline_corrected_dB = 10*np.log10(psds_list / baseline_mean) # Convert to dB
+                all_psds.append(baseline_corrected_dB)
             # Unload data from iteration to save memory space
             del filtered_epochs
             gc.collect()
@@ -132,10 +134,9 @@ ch_grid_dict = {                                       'Fp1':(2.7,0), 'Fpz':(4,0
 # Parameters
 mne.set_log_level('warning')
 window = 1
-settings = ['T3Pn', 'T3Pn']
+settings = ['T1P', 'T3P']
 overlap = 0.9
 epochs = epochs_df['Epochs']
-# band = [12,35]
 
 for band in [[4,8], [8,12], [12,35], [1,40]]:
     # ERD Grid Plot
@@ -170,12 +171,12 @@ for band in [[4,8], [8,12], [12,35], [1,40]]:
     # General legend
     fig.legend(handles, labels, loc='upper right', bbox_to_anchor=(1, 1), fontsize=12)
 
-    plt.suptitle('ERD plots for all channels', fontsize=16)
-    fig.savefig(f'erd_grid_plot_group_f_nf_{band[0]}_{band[1]}.png', dpi=300)
+    plt.suptitle(f'ERD/S grid for all channels, {settings[0]} vs {settings[1]}', fontsize=16)
+    fig.savefig(f'erd_grid_solo_group_f_{band[0]}_{band[1]}.png', dpi=300)
     plt.close(fig)
 
 # Plot Spectrogram
-mpl.rcParams['image.cmap'] = 'viridis'
+mpl.rcParams['image.cmap'] = 'bwr'
 fig = plt.figure(figsize=(11, 8))
 axes = []  # to collect axes
 ims = []   # to collect plots 
@@ -215,14 +216,15 @@ for ch, (x, y) in tqdm(ch_grid_dict.items(), desc=f'Creating spectrogram grid, w
     del diff_psds  # Free memory
 
 
+global_extreme = max(abs(global_min), abs(global_max))
 # Fix color limits for all images
 for im in ims:
-    im.set_clim(global_min, global_max)
+    im.set_clim(-global_extreme, global_extreme)
     
 # Shared colorbar on the right
 cbar = fig.colorbar(ims[0], ax=axes, location='right', shrink=0.9)
 cbar.set_label('Power Difference (DB)')
 
 plt.suptitle("Spectrogram plots for all channels", fontsize=16)
-fig.savefig('Spectrogram_grid_plot_solo_group_nf.png', dpi=300)
+fig.savefig('Spectrogram_grid_solo_group_f.png', dpi=300)
 plt.close(fig)
