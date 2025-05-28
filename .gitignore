@@ -36,3 +36,4 @@ checkpoints/Final_models/Base setup Time Shifts/sologroup/log.txt
 checkpoints/Final_models/base_model_time_shifts/friendshipts=30_seed0_cls_csv/log.txt
 checkpoints/Final_models/Base_setup/sologroup/log.txt
 *.png
+LaBraM/FG_Data/Force_df_v2.pkl
