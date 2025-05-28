@@ -9,6 +9,11 @@ import numpy as np
 import matplotlib.pyplot as plt
 from pathlib import Path
 
+def add_subplot_label(ax, label, x=-0.1, y=1.02):
+    """Add a subplot label (A, B, C, D) to the given axes"""
+    ax.text(x, y, label, transform=ax.transAxes, fontsize=16, fontweight='bold', 
+            verticalalignment='bottom', horizontalalignment='right')
+
 def load_log_data(log_file_path):
     """
     Load data from a log.txt file.
@@ -74,6 +79,9 @@ def plot_metrics(log_files, output_dir, condition_labels=None):
     # Define consistent colors for each condition
     colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728']
     
+    # Subplot labels
+    subplot_labels = ['A', 'B', 'C', 'D']
+    
     # For storing data to be used in combined plots
     all_data = {}
     
@@ -102,6 +110,7 @@ def plot_metrics(log_files, output_dir, condition_labels=None):
     ax.set_ylabel('Loss')
     ax.legend()
     ax.grid(True, linestyle='--', alpha=0.7)
+    add_subplot_label(ax, subplot_labels[0])
     
     # Top-right: Test Loss
     ax = axes[0, 1]
@@ -114,6 +123,7 @@ def plot_metrics(log_files, output_dir, condition_labels=None):
     ax.set_ylabel('Loss')
     ax.legend()
     ax.grid(True, linestyle='--', alpha=0.7)
+    add_subplot_label(ax, subplot_labels[1])
     
     # Bottom-left: Training Accuracy
     ax = axes[1, 0]
@@ -126,6 +136,7 @@ def plot_metrics(log_files, output_dir, condition_labels=None):
     ax.set_ylabel('Accuracy')
     ax.legend()
     ax.grid(True, linestyle='--', alpha=0.7)
+    add_subplot_label(ax, subplot_labels[2])
     
     # Bottom-right: Test Accuracy
     ax = axes[1, 1]
@@ -133,11 +144,13 @@ def plot_metrics(log_files, output_dir, condition_labels=None):
         display_label = condition_labels.get(condition, condition)
         ax.plot(metrics['epoch'], metrics['test_accuracy'], 
                 label=display_label, color=colors[i % len(colors)])
+    ## add a horizontal dotted red line a at y=0.66
     ax.set_title('Test Accuracy')
     ax.set_xlabel('Epoch')
     ax.set_ylabel('Accuracy')
     ax.legend()
     ax.grid(True, linestyle='--', alpha=0.7)
+    add_subplot_label(ax, subplot_labels[3])
     
     # Adjust layout and save
     plt.tight_layout(rect=[0, 0, 1, 0.95])  # Make room for suptitle
@@ -160,6 +173,9 @@ def create_individual_plot(condition, display_label, metrics, output_dir, color)
     fig, axes = plt.subplots(2, 2, figsize=(15, 9))
     fig.suptitle(f'Social Metadata Classification - {display_label}', fontsize=16)
     
+    # Subplot labels
+    subplot_labels = ['A', 'B', 'C', 'D']
+    
     # Training Loss
     ax = axes[0, 0]
     ax.plot(metrics['epoch'], metrics['train_loss'], 
@@ -169,6 +185,7 @@ def create_individual_plot(condition, display_label, metrics, output_dir, color)
     ax.set_ylabel('Loss')
     ax.legend()
     ax.grid(True, linestyle='--', alpha=0.7)
+    add_subplot_label(ax, subplot_labels[0])
     
     # Test Loss
     ax = axes[0, 1]
@@ -179,6 +196,7 @@ def create_individual_plot(condition, display_label, metrics, output_dir, color)
     ax.set_ylabel('Loss')
     ax.legend()
     ax.grid(True, linestyle='--', alpha=0.7)
+    add_subplot_label(ax, subplot_labels[1])
     
     # Training Accuracy
     ax = axes[1, 0]
@@ -189,16 +207,19 @@ def create_individual_plot(condition, display_label, metrics, output_dir, color)
     ax.set_ylabel('Accuracy')
     ax.legend()
     ax.grid(True, linestyle='--', alpha=0.7)
+    add_subplot_label(ax, subplot_labels[2])
     
     # Test Accuracy
     ax = axes[1, 1]
     ax.plot(metrics['epoch'], metrics['test_accuracy'], 
             label='Test Accuracy', color=color, marker='o', markersize=4)
+    ax.axhline(y=0.66, color='red', linestyle='--', label='Majority Class Baseline')
     ax.set_title('Test Accuracy')
     ax.set_xlabel('Epoch')
     ax.set_ylabel('Accuracy')
     ax.legend()
     ax.grid(True, linestyle='--', alpha=0.7)
+    add_subplot_label(ax, subplot_labels[3])
     
     # Adjust layout and save
     plt.tight_layout(rect=[0, 0, 1, 0.95])  # Make room for suptitle
@@ -212,7 +233,8 @@ def main():
     log_files = {
         "feedback": "/zhome/ce/8/186807/Desktop/Labram/LaBraM-MMDTU/checkpoints/metadata_training/feedback_with_metadata/log.txt",
         "friendship": "/zhome/ce/8/186807/Desktop/Labram/LaBraM-MMDTU/checkpoints/metadata_training/friendship_with_metadata/log.txt",
-        "gender": "/zhome/ce/8/186807/Desktop/Labram/LaBraM-MMDTU/checkpoints/metadata_training/gender_with_metadata/log.txt",
+        #"gender": "/zhome/ce/8/186807/Desktop/Labram/LaBraM-MMDTU/checkpoints/metadata_training/gender_with_metadata/log.txt",
+        "gender": "/zhome/ce/8/186807/Desktop/Labram/LaBraM-MMDTU/checkpoints/metadata_training/friendship_cls_csv/log.txt",
         "sologroup": "/zhome/ce/8/186807/Desktop/Labram/LaBraM-MMDTU/checkpoints/metadata_training/sologroup_with_metadata/log.txt"
     }
     

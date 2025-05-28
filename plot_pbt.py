@@ -25,7 +25,7 @@ def create_plots(csv_paths):
         'feedback no time shift': '#ff7f0e',  # orange
         'friendship': '#2ca02c',        # green
         'gender': '#d62728',            # red
-        'sologroup': '#9467bd'          # purple
+        'solo vs group': '#9467bd'          # purple
     }
     
     # Debug all CSV files first

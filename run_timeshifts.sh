@@ -43,7 +43,7 @@ run_training() {
 
     echo "Running training for ${condition} with model ${model_name}..."
 
-    local output_dir="/zhome/ce/8/186807/Desktop/Labram/LaBraM-MMDTU/checkpoints/Final_models/${model_name}/${condition}ts=30_normal_seed2"
+    local output_dir="/zhome/ce/8/186807/Desktop/Labram/LaBraM-MMDTU/checkpoints/Final_models/${model_name}/${condition}ts=30_seed0_cls_csv"
     mkdir -p "${output_dir}"
     mkdir -p "./log/finetune_dtu_base/betaband_models/${model_name}/${condition}"
 
@@ -64,7 +64,7 @@ run_training() {
         --abs_pos_emb \
         --dataset DTU \
         --disable_qkv_bias \
-        --seed 2 \
+        --seed 0 \
         --condition "${condition}"
 }
 

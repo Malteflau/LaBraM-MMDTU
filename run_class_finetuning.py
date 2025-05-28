@@ -25,7 +25,7 @@ from optim_factory import create_optimizer, get_parameter_groups, LayerDecayValu
 from torch.optim import Adam  # Replace Nadam with Adam or any other optimizer
 from utils import prepare_DTU_triad_data
 
-from engine_for_finetuning import train_one_epoch, evaluate
+from engine_for_finetuning import train_one_epoch, evaluate, analyze_by_participant
 from utils import NativeScalerWithGradNormCount as NativeScaler
 import utils
 from scipy import interpolate
@@ -564,7 +564,66 @@ def main(args, ds_init):
                             ch_names=ch_names, metrics=metrics, 
                             is_binary=args.nb_classes == 1)
         print(f"Accuracy of the network on the {len(dataset_test)} test EEG: {test_stats['accuracy']:.2f}%")
-        
+
+        # Log the detailed confusion matrix metrics to TensorBoard
+        if log_writer is not None:
+            log_writer.update(tp=test_stats.get('tp', 0), head="test", step=epoch)
+            log_writer.update(tn=test_stats.get('tn', 0), head="test", step=epoch)
+            log_writer.update(fp=test_stats.get('fp', 0), head="test", step=epoch)
+            log_writer.update(fn=test_stats.get('fn', 0), head="test", step=epoch)
+            log_writer.update(precision=test_stats.get('precision', 0), head="test", step=epoch)
+            log_writer.update(recall=test_stats.get('recall', 0), head="test", step=epoch)
+            log_writer.update(f1=test_stats.get('f1', 0), head="test", step=epoch)
+
+        # Print the confusion matrix metrics summary
+        print(f"Epoch {epoch} Confusion Matrix:")
+        print(f"TP: {test_stats.get('tp', 0)}, TN: {test_stats.get('tn', 0)}")
+        print(f"FP: {test_stats.get('fp', 0)}, FN: {test_stats.get('fn', 0)}")
+        print(f"Precision: {test_stats.get('precision', 0):.4f}, Recall: {test_stats.get('recall', 0):.4f}, F1: {test_stats.get('f1', 0):.4f}")
+
+        # Be sure these metrics are included in log_stats as well
+        log_stats = {**{f'train_{k}': v for k, v in train_stats.items()},
+                    **{f'test_{k}': v for k, v in test_stats.items()},
+                    'epoch': epoch,
+                    'n_parameters': n_parameters}
+        # Perform participant-level analysis every few epochs (e.g., every 5 epochs)
+        if args.condition == "friendship" :
+            print("\nPerforming detailed participant-level analysis for friendship classification...")
+            participant_stats = analyze_by_participant(
+                data_loader_test, model, device, 
+                ch_names=ch_names, is_binary=args.nb_classes == 1
+            )
+            
+            # Save participant statistics to a CSV file for further analysis
+            if utils.is_main_process() and args.output_dir:
+                import pandas as pd
+                
+                # Convert participant stats to DataFrame
+                stats_data = []
+                for pid, stats in participant_stats.items():
+                    stats_row = {
+                        'participant_id': pid,
+                        'total_samples': stats['total'],
+                        'accuracy': stats['accuracy'],
+                        'tp': stats['tp'],
+                        'tn': stats['tn'],
+                        'fp': stats['fp'],
+                        'fn': stats['fn'],
+                        'precision': stats.get('precision', 0),
+                        'recall': stats.get('recall', 0),
+                        'f1': stats.get('f1', 0),
+                        'true_class0': stats['label_dist'][0],
+                        'true_class1': stats['label_dist'][1],
+                        'pred_class0': stats['pred_dist'][0],
+                        'pred_class1': stats['pred_dist'][1],
+                    }
+                    stats_data.append(stats_row)
+                
+                # Create DataFrame and save to CSV
+                stats_df = pd.DataFrame(stats_data)
+                output_path = os.path.join(args.output_dir, f"participant_stats_epoch{epoch}.csv")
+                stats_df.to_csv(output_path, index=False)
+                print(f"Saved participant-level statistics to {output_path}")
         # For classification, continue using accuracy as the monitoring metric
         if max_accuracy < test_stats["accuracy"]:
             max_accuracy = test_stats["accuracy"]

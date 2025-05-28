@@ -1169,24 +1169,39 @@ class DTULoader(torch.utils.data.Dataset):
     
     def __len__(self):
         return len(self.valid_indices)
-
     def __getitem__(self, index):
         file_index = self.valid_indices[index]
         file = self.files[file_index]
         dataset_type = self.type
         sample = pickle.load(open(os.path.join(self.root, file), "rb"))
         X = sample["X"]
-        #X = self._apply_bandpass_filter(X,12.5,30)
-        # Determine label based on condition
+        
+        # Early filtering check - if this is a combination we need to skip
+        condition_type = sample.get("condition_type", "")
+        participant_num = sample.get("participant_num", "")
+        
+        skip_trial = False
+        if condition_type.startswith("T23") and participant_num == "P1":
+            skip_trial = True
+        elif condition_type.startswith("T13") and participant_num == "P2":
+            skip_trial = True
+        elif condition_type.startswith("T12") and participant_num == "P3":
+            skip_trial = True
+        
+        # If this is a trial we need to skip, use the next valid index instead
+        if skip_trial:
+            # Find the next valid index
+            next_index = (index + 1) % len(self.valid_indices)
+            return self.__getitem__(next_index)  # Recursively call with next index
+        
+        # Regular processing continues for valid trials
         if self.condition[0] == "feedback":
-            y = sample["y"]  # Use pre-existing feedback label
+            y = sample["y"]
         elif self.condition[0] == "friendship":
             y = 1 if sample["friend_status"] == "Yes" else 0
         elif self.condition[0] == "sologroup":
             # Determine if this is a solo trial for this participant
-            condition_str = sample.get("condition", "")
-            participant_num = sample.get("participant_num", "")
-            y = self._is_solo_condition(condition_str, participant_num)
+            y = self._is_solo_condition(condition_type, participant_num)
         elif self.condition[0] == "gender":
             y = 1 if sample["gender"] == "M" else 0
         else:
@@ -1194,53 +1209,29 @@ class DTULoader(torch.utils.data.Dataset):
             y = sample["y"]
 
         channels, patches, time_per_patch = X.shape
-
-
-        ##### THIS CODE NEEDS TO BE UNCOMMENTED TO TRAIN ON POWER SPECTRUM. THIS DOES NOT SEEM TO WORK WELL THOUGH
-        # additionally, you need to change some other code so you dont overwrite the x_tensor
-
-        # # for computing power spectrum  
-        # X_power = np.zeros((channels, patches, time_per_patch))    
-        # for ch in range(channels):
-        #     for p in range(patches):
-        #         time_series = X[ch, p, :]
-        #         windowed_data = time_series * np.hanning(time_per_patch)
-        #         fft_result = np.fft.fft(windowed_data, n=time_per_patch)
-        #         power = np.abs(fft_result)**2
-        #         X_power[ch, p, :] = power
         
-        # X_tensor = torch.FloatTensor(X_power.reshape(channels, patches * time_per_patch))
-
-        
-        # X_raw_reshaped = X.reshape(channels, patches * time_per_patch)
-        # X_raw_tensor = torch.FloatTensor(X_raw_reshaped)
-        # combined_tensor = torch.cat([X_raw_tensor, X_tensor], dim=1)
-        # combined_tensor = torch.FloatTensor(combined_tensor)
-
-
-        ####
+        # Rest of your code stays the same
         gender = 1 if sample.get("gender", "M") == "M" else 0
-        feedback = sample.get("y", 0)  # Assuming y is the feedback flag
+        feedback = sample.get("y", 0)
         friendship = 1 if sample.get("friend_status", "No") == "Yes" else 0
-        solo_group = 1 if self._is_solo_condition(sample.get("condition_type", ""), sample.get("participant_num", "")) else 0
+        solo_group = 1 if self._is_solo_condition(condition_type, participant_num) else 0
         
-        # This is not pretty, but friendship and solo_group will be interchangable conditions
-        # If solo_group is test target, then friendship is metadata and vice versa
-
         metadata = {
             "gender": torch.LongTensor([gender]),
             "feedback": torch.LongTensor([feedback]),
             "friendship": torch.LongTensor([solo_group])
         }
 
-        X_tensor = torch.FloatTensor(X.reshape(channels,patches*time_per_patch))
+        X_tensor = torch.FloatTensor(X.reshape(channels, patches*time_per_patch))
         if dataset_type == "train":
-           X_tensor = self._time_shift_patches(X_tensor,max_shift=100)
+           X_tensor = self._time_shift_patches(X_tensor,max_shift=30)
         else:
            pass
         y_tensor = torch.FloatTensor([y]).squeeze()
-        return X_tensor , y_tensor, metadata
 
+
+        return X_tensor, y_tensor, metadata
+    
     def _time_shift_patches(self, X, max_shift=30):
         # Check the input shape
         channels, time_points = X.shape
@@ -1297,14 +1288,9 @@ class DTULoader(torch.utils.data.Dataset):
         """Helper method to determine if a trial is solo for this participant"""
         if condition_str.startswith("T1") and not condition_str.startswith("T12") and not condition_str.startswith("T13"):
             return True  # Direct solo condition
-        elif condition_str.startswith("T23") and participant_num == "P1":
-            return True  # Participant 1 not involved in T23
-        elif condition_str.startswith("T13") and participant_num == "P2":
-            return True  # Participant 2 not involved in T13
-        elif condition_str.startswith("T12") and participant_num == "P3":
-            return True  # Participant 3 not involved in T12
         else:
             return False  # Group condition for this participant
+        
         
 
 def prepare_DTU_data(root, condition=["feedback"], filter_feedback_only=None, 

@@ -9,6 +9,11 @@ import numpy as np
 import matplotlib.pyplot as plt
 from pathlib import Path
 
+def add_subplot_label(ax, label, x=-0.1, y=1.02):
+    """Add a subplot label (A, B, C, D) to the given axes"""
+    ax.text(x, y, label, transform=ax.transAxes, fontsize=16, fontweight='bold', 
+            verticalalignment='bottom', horizontalalignment='right')
+
 def load_log_data(log_file_path):
     """
     Load data from a log.txt file.
@@ -74,6 +79,9 @@ def plot_metrics(conditions, base_dir, output_dir=None):
     # Define consistent colors for each condition
     colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728']
     
+    # Subplot labels
+    subplot_labels = ['A', 'B', 'C', 'D']
+    
     # For storing data to be used in combined plots
     all_data = {}
     
@@ -101,6 +109,7 @@ def plot_metrics(conditions, base_dir, output_dir=None):
     ax.set_ylabel('Loss')
     ax.legend()
     ax.grid(True, linestyle='--', alpha=0.7)
+    add_subplot_label(ax, subplot_labels[0])
     
     # Top-right: Test Loss
     ax = axes[0, 1]
@@ -112,6 +121,7 @@ def plot_metrics(conditions, base_dir, output_dir=None):
     ax.set_ylabel('Loss')
     ax.legend()
     ax.grid(True, linestyle='--', alpha=0.7)
+    add_subplot_label(ax, subplot_labels[1])
     
     # Bottom-left: Training Accuracy
     ax = axes[1, 0]
@@ -123,6 +133,7 @@ def plot_metrics(conditions, base_dir, output_dir=None):
     ax.set_ylabel('Accuracy')
     ax.legend()
     ax.grid(True, linestyle='--', alpha=0.7)
+    add_subplot_label(ax, subplot_labels[2])
     
     # Bottom-right: Test Accuracy
     ax = axes[1, 1]
@@ -134,6 +145,7 @@ def plot_metrics(conditions, base_dir, output_dir=None):
     ax.set_ylabel('Accuracy')
     ax.legend()
     ax.grid(True, linestyle='--', alpha=0.7)
+    add_subplot_label(ax, subplot_labels[3])
     
     # Adjust layout and save
     plt.tight_layout(rect=[0, 0, 1, 0.95])  # Make room for suptitle
@@ -155,6 +167,9 @@ def create_individual_plot(condition, metrics, output_dir, color):
     fig, axes = plt.subplots(2, 2, figsize=(15, 9))
     fig.suptitle(f'BetaBand Classification Metrics - {condition}', fontsize=16)
     
+    # Subplot labels
+    subplot_labels = ['A', 'B', 'C', 'D']
+    
     # Training Loss
     ax = axes[0, 0]
     ax.plot(metrics['epoch'], metrics['train_loss'], 
@@ -164,6 +179,7 @@ def create_individual_plot(condition, metrics, output_dir, color):
     ax.set_ylabel('Loss')
     ax.legend()
     ax.grid(True, linestyle='--', alpha=0.7)
+    add_subplot_label(ax, subplot_labels[0])
     
     # Test Loss
     ax = axes[0, 1]
@@ -174,6 +190,7 @@ def create_individual_plot(condition, metrics, output_dir, color):
     ax.set_ylabel('Loss')
     ax.legend()
     ax.grid(True, linestyle='--', alpha=0.7)
+    add_subplot_label(ax, subplot_labels[1])
     
     # Training Accuracy
     ax = axes[1, 0]
@@ -184,6 +201,7 @@ def create_individual_plot(condition, metrics, output_dir, color):
     ax.set_ylabel('Accuracy')
     ax.legend()
     ax.grid(True, linestyle='--', alpha=0.7)
+    add_subplot_label(ax, subplot_labels[2])
     
     # Test Accuracy
     ax = axes[1, 1]
@@ -194,6 +212,7 @@ def create_individual_plot(condition, metrics, output_dir, color):
     ax.set_ylabel('Accuracy')
     ax.legend()
     ax.grid(True, linestyle='--', alpha=0.7)
+    add_subplot_label(ax, subplot_labels[3])
     
     # Adjust layout and save
     plt.tight_layout(rect=[0, 0, 1, 0.95])  # Make room for suptitle

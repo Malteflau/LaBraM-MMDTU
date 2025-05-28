@@ -62,41 +62,61 @@ def plot_metrics(metrics_dict1, metrics_dict2, exp_names):
     fig, axes = plt.subplots(2, 2, figsize=(14, 10))
     fig.suptitle('Comparison of Training Metrics in VQNSP', fontsize=16)
     
+    # Define colors: orange for Scratch setup, green for Beta band setup
+    colors = ['#FF8C00', "#570157"]  # Orange, Forest Green
+    markers = ['o', 's']
+    
     # Plot reconstruction loss
     ax = axes[0, 0]
-    ax.plot(metrics_dict1['epochs'], metrics_dict1['rec_losses'], 'o-', label=f"{exp_names[0]}")
-    ax.plot(metrics_dict2['epochs'], metrics_dict2['rec_losses'], 's-', label=f"{exp_names[1]}")
+    ax.plot(metrics_dict1['epochs'], metrics_dict1['rec_losses'], 
+            marker=markers[0], color=colors[0], linestyle='-', label=f"{exp_names[0]}")
+    ax.plot(metrics_dict2['epochs'], metrics_dict2['rec_losses'], 
+            marker=markers[1], color=colors[1], linestyle='-', label=f"{exp_names[1]}")
     ax.set_title('Amplitude Reconstruction Loss')
     ax.set_xlabel('Epoch')
     ax.set_ylabel('Loss')
     ax.legend()
+    ax.text(0.05, 0.95, 'A', transform=ax.transAxes, fontsize=14, fontweight='bold', 
+            verticalalignment='top', bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
     
     # Plot angle loss
     ax = axes[0, 1]
-    ax.plot(metrics_dict1['epochs'], metrics_dict1['angle_losses'], 'o-', label=f"{exp_names[0]}")
-    ax.plot(metrics_dict2['epochs'], metrics_dict2['angle_losses'], 's-', label=f"{exp_names[1]}")
+    ax.plot(metrics_dict1['epochs'], metrics_dict1['angle_losses'], 
+            marker=markers[0], color=colors[0], linestyle='-', label=f"{exp_names[0]}")
+    ax.plot(metrics_dict2['epochs'], metrics_dict2['angle_losses'], 
+            marker=markers[1], color=colors[1], linestyle='-', label=f"{exp_names[1]}")
     ax.set_title('Angle Reconstruction Loss')
     ax.set_xlabel('Epoch')
     ax.set_ylabel('Loss')
     ax.legend()
+    ax.text(0.05, 0.95, 'B', transform=ax.transAxes, fontsize=14, fontweight='bold', 
+            verticalalignment='top', bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
     
     # Plot total loss
     ax = axes[1, 0]
-    ax.plot(metrics_dict1['epochs'], metrics_dict1['total_losses'], 'o-', label=f"{exp_names[0]}")
-    ax.plot(metrics_dict2['epochs'], metrics_dict2['total_losses'], 's-', label=f"{exp_names[1]}")
+    ax.plot(metrics_dict1['epochs'], metrics_dict1['total_losses'], 
+            marker=markers[0], color=colors[0], linestyle='-', label=f"{exp_names[0]}")
+    ax.plot(metrics_dict2['epochs'], metrics_dict2['total_losses'], 
+            marker=markers[1], color=colors[1], linestyle='-', label=f"{exp_names[1]}")
     ax.set_title('Total Loss')
     ax.set_xlabel('Epoch')
     ax.set_ylabel('Loss')
     ax.legend()
+    ax.text(0.05, 0.95, 'C', transform=ax.transAxes, fontsize=14, fontweight='bold', 
+            verticalalignment='top', bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
     
     # Plot unused codebook
     ax = axes[1, 1]
-    ax.plot(metrics_dict1['epochs'], metrics_dict1['unused_codes'], 'o-', label=f"{exp_names[0]}")
-    ax.plot(metrics_dict2['epochs'], metrics_dict2['unused_codes'], 's-', label=f"{exp_names[1]}")
+    ax.plot(metrics_dict1['epochs'], metrics_dict1['unused_codes'], 
+            marker=markers[0], color=colors[0], linestyle='-', label=f"{exp_names[0]}")
+    ax.plot(metrics_dict2['epochs'], metrics_dict2['unused_codes'], 
+            marker=markers[1], color=colors[1], linestyle='-', label=f"{exp_names[1]}")
     ax.set_title('Unused Codebook Entries')
     ax.set_xlabel('Epoch')
     ax.set_ylabel('Count')
     ax.legend()
+    ax.text(0.05, 0.95, 'D', transform=ax.transAxes, fontsize=14, fontweight='bold', 
+            verticalalignment='top', bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
     
     plt.tight_layout()
     plt.subplots_adjust(top=0.92)
@@ -112,7 +132,7 @@ def main():
     path2 = "/zhome/ce/8/186807/Desktop/Labram/LaBraM-MMDTU/checkpoints/dtu_vqnsp_betaband/log.txt"
     
     # Names for the experiments (for plot legends)
-    exp_names = ["Regular VQNSP", "Beta-band VQNSP"]
+    exp_names = ["Scratch setup", "Beta band setup"]
     
     # Load the data
     data1 = load_log_data(path1)

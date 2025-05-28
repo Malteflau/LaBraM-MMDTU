@@ -50,6 +50,12 @@ def extract_metrics(log_file_path):
     df = pd.DataFrame(data)
     return df
 
+# Function to add subplot labels
+def add_subplot_label(ax, label, x=-0.1, y=1.02):
+    """Add a subplot label (A, B, C, D) to the given axes"""
+    ax.text(x, y, label, transform=ax.transAxes, fontsize=16, fontweight='bold', 
+            verticalalignment='bottom', horizontalalignment='right')
+
 # Collect all results
 all_results = []
 
@@ -95,13 +101,16 @@ model_color_map = {
 colors = [model_color_map[model] for model in model_names]
 
 # Create output directories
-output_dir = "result_plots_time_shifts"
+output_dir = "result_plots_time_shifts_1"
 os.makedirs(output_dir, exist_ok=True)
+
+# Subplot labels
+subplot_labels = ['A', 'B', 'C', 'D']
 
 # Plot 1: Train Loss by Model for each Condition
 plt.figure(figsize=(15, 10))
 for i, condition in enumerate(conditions):
-    plt.subplot(2, 2, i+1)
+    ax = plt.subplot(2, 2, i+1)
     for j, model_name in enumerate(model_names):
         model_data = combined_df[(combined_df['model'] == model_name) & 
                                (combined_df['condition'] == condition)]
@@ -114,14 +123,15 @@ for i, condition in enumerate(conditions):
     plt.ylabel('Loss')
     plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
     plt.grid(True)
-    plt.tight_layout()
+    add_subplot_label(ax, subplot_labels[i])
 
+plt.tight_layout()
 plt.savefig(os.path.join(output_dir, 'train_loss_by_condition.png'), dpi=300, bbox_inches='tight')
 
 # Plot 2: Test Loss by Model for each Condition
 plt.figure(figsize=(15, 10))
 for i, condition in enumerate(conditions):
-    plt.subplot(2, 2, i+1)
+    ax = plt.subplot(2, 2, i+1)
     for j, model_name in enumerate(model_names):
         model_data = combined_df[(combined_df['model'] == model_name) & 
                                (combined_df['condition'] == condition)]
@@ -134,21 +144,22 @@ for i, condition in enumerate(conditions):
     plt.ylabel('Loss')
     plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
     plt.grid(True)
-    plt.tight_layout()
+    add_subplot_label(ax, subplot_labels[i])
 
+plt.tight_layout()
 plt.savefig(os.path.join(output_dir, 'test_loss_by_condition.png'), dpi=300, bbox_inches='tight')
 
 # Define baseline accuracies based on class distributions
 train_baseline_accuracies = {
     "feedback": 50.00,      # Feedback (train): 50.0% (balanced)
-    "sologroup": 60.00,     # Solo/Group (train): 66.89% (group class is dominant)
+    "sologroup": 75.00,     # Solo/Group (train): 75% (group class is dominant)
     "gender": 61.97,        # Gender (train): 61.97% (male class is dominant)
     "friendship": 67.52,    # Friendship (train): 67.52% (friends class is dominant)
 }
 
 test_baseline_accuracies = {
     "feedback": 50.03,      # Feedback (test): 50.03% (balanced)
-    "sologroup": 60.00,     # Solo/Group (test): 66.74% (group class is dominant)
+    "sologroup": 75.00,     # Solo/Group (test): 75% (group class is dominant)
     "gender": 66.65,        # Gender (test): 66.65% (male class is dominant)
     "friendship": 66.46,    # Friendship (test): 66.46% (friends class is dominant)
 }
@@ -156,7 +167,7 @@ test_baseline_accuracies = {
 # Plot 3: Train Accuracy by Model for each Condition
 plt.figure(figsize=(15, 10))
 for i, condition in enumerate(conditions):
-    plt.subplot(2, 2, i+1)
+    ax = plt.subplot(2, 2, i+1)
     for j, model_name in enumerate(model_names):
         model_data = combined_df[(combined_df['model'] == model_name) & 
                                (combined_df['condition'] == condition)]
@@ -174,14 +185,15 @@ for i, condition in enumerate(conditions):
     plt.ylabel('Accuracy (%)')
     plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
     plt.grid(True)
-    plt.tight_layout()
+    add_subplot_label(ax, subplot_labels[i])
 
+plt.tight_layout()
 plt.savefig(os.path.join(output_dir, 'train_accuracy_by_condition.png'), dpi=300, bbox_inches='tight')
 
 # Plot 4: Test Accuracy by Model for each Condition
 plt.figure(figsize=(15, 10))
 for i, condition in enumerate(conditions):
-    plt.subplot(2, 2, i+1)
+    ax = plt.subplot(2, 2, i+1)
     for j, model_name in enumerate(model_names):
         model_data = combined_df[(combined_df['model'] == model_name) & 
                                (combined_df['condition'] == condition)]
@@ -199,8 +211,9 @@ for i, condition in enumerate(conditions):
     plt.ylabel('Accuracy (%)')
     plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
     plt.grid(True)
-    plt.tight_layout()
+    add_subplot_label(ax, subplot_labels[i])
 
+plt.tight_layout()
 plt.savefig(os.path.join(output_dir, 'test_accuracy_by_condition.png'), dpi=300, bbox_inches='tight')
 
 # Plot 5: Final Test Accuracy by Model and Condition (bar chart)
@@ -268,7 +281,7 @@ if final_results:
 # Plot 6: Training vs Test Loss Comparison
 plt.figure(figsize=(15, 10))
 for i, model_name in enumerate(model_names):
-    plt.subplot(2, 2, i+1)
+    ax = plt.subplot(2, 2, i+1)
     for j, condition in enumerate(conditions):
         model_data = combined_df[(combined_df['model'] == model_name) & 
                                (combined_df['condition'] == condition)]
@@ -283,8 +296,9 @@ for i, model_name in enumerate(model_names):
     plt.ylabel('Loss')
     plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
     plt.grid(True)
-    plt.tight_layout()
+    add_subplot_label(ax, subplot_labels[i])
 
+plt.tight_layout()
 plt.savefig(os.path.join(output_dir, 'train_vs_test_loss.png'), dpi=300, bbox_inches='tight')
 
 # Plot 7: Highest Test Accuracy by Model and Condition (bar chart)
@@ -357,6 +371,7 @@ if highest_results:
     plt.tight_layout()
     
     plt.savefig(os.path.join(output_dir, 'highest_test_accuracy.png'), dpi=300, bbox_inches='tight')
+
 # Create a summary table with best performance
 summary_data = []
 for model_name in model_names:

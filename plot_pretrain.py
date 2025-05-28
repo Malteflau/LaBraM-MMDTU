@@ -54,9 +54,12 @@ def plot_training_loss(metrics_dict1, metrics_dict2, metrics_dict3, exp_names):
     """Plot the training loss from three different experiments"""
     plt.figure(figsize=(10, 6))
     
-    plt.plot(metrics_dict1['epochs'], metrics_dict1['train_losses'], 'o-', label=exp_names[0])
-    plt.plot(metrics_dict2['epochs'], metrics_dict2['train_losses'], 's-', label=exp_names[1])
-    plt.plot(metrics_dict3['epochs'], metrics_dict3['train_losses'], '^-', label=exp_names[2])
+    # Define colors: Hybrid (green), Scratch (orange), Beta band (purple)
+    colors = ['#2E8B57', '#FF8C00', '#570157']
+    
+    plt.plot(metrics_dict1['epochs'], metrics_dict1['train_losses'], 'o-', label=exp_names[0], color=colors[0])
+    plt.plot(metrics_dict2['epochs'], metrics_dict2['train_losses'], 's-', label=exp_names[1], color=colors[1])
+    plt.plot(metrics_dict3['epochs'], metrics_dict3['train_losses'], '^-', label=exp_names[2], color=colors[2])
     
     plt.title('Pre-training Loss', fontsize=16)
     plt.xlabel('Epoch', fontsize=14)
@@ -73,18 +76,21 @@ def plot_mlm_accuracy(metrics_dict1, metrics_dict2, metrics_dict3, exp_names):
     """Plot the masked EEG modeling accuracy from three different experiments"""
     plt.figure(figsize=(10, 6))
     
+    # Define colors: Hybrid (green), Scratch (orange), Beta band (purple)
+    colors = ['#2E8B57', '#FF8C00', '#570157']
+    
     # Only plot for experiments that have MLM accuracy
     if metrics_dict1['mlm_acc']:
         plt.plot(metrics_dict1['epochs'][:len(metrics_dict1['mlm_acc'])], 
-                 metrics_dict1['mlm_acc'], 'o-', label=exp_names[0])
+                 metrics_dict1['mlm_acc'], 'o-', label=exp_names[0], color=colors[0])
     
     if metrics_dict2['mlm_acc']:
         plt.plot(metrics_dict2['epochs'][:len(metrics_dict2['mlm_acc'])], 
-                 metrics_dict2['mlm_acc'], 's-', label=exp_names[1])
+                 metrics_dict2['mlm_acc'], 's-', label=exp_names[1], color=colors[1])
     
     if metrics_dict3['mlm_acc']:
         plt.plot(metrics_dict3['epochs'][:len(metrics_dict3['mlm_acc'])], 
-                 metrics_dict3['mlm_acc'], '^-', label=exp_names[2])
+                 metrics_dict3['mlm_acc'], '^-', label=exp_names[2], color=colors[2])
     
     plt.title('Masked EEG Modeling Accuracy', fontsize=16)
     plt.xlabel('Epoch', fontsize=14)
@@ -104,7 +110,7 @@ def main():
     path3 = "/zhome/ce/8/186807/Desktop/Labram/LaBraM-MMDTU/checkpoints/Final_models/pretrain_betaband/log.txt"
     
     # Names for the experiments (for plot legends)
-    exp_names = ["Original VQNSP", "LaBraM DTU Pre-training", "Beta-band Pre-training"]
+    exp_names = ["Hybrid setup", "Scratch setup", "Beta band setup"]
     
     # Load the data
     data1 = load_log_data(path1)
