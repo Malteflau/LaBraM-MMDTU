@@ -38,7 +38,7 @@ test_acc = {}
 test_loss = {}
 # Load data
 for i, label in enumerate(['feedback', 'friendship', 'gender', 'sologroup']):
-
+    print(f'Starting training for {label} prediction')
     x_train, y_train = load_eeg_data_from_pkl(TRAIN_DIR, label_mode=label)
     x_test, y_test   = load_eeg_data_from_pkl(TEST_DIR, label_mode=label)
     x_val, y_val     = load_eeg_data_from_pkl(VAL_DIR, label_mode=label)

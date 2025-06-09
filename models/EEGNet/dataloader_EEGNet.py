@@ -16,7 +16,7 @@ def load_eeg_data_from_pkl(directory, label_mode='feedback'):
     - y: np.ndarray, labels according to the selected mode
     """
     X, y = [], []
-
+    duo_conditions = ['T13P', 'T13Pn', 'T12P', 'T12Pn', 'T23P', 'T23Pn']
     for file in os.listdir(directory):
         if not file.endswith('.pkl'):
             continue
@@ -27,7 +27,11 @@ def load_eeg_data_from_pkl(directory, label_mode='feedback'):
         condition = sample.get('condition', '')
         has_feedback = sample.get('has_feedback', False)
         p_num = sample.get('participant_num')[-1]
-
+        
+        # Skip duo conditions that participant doesn't partake in
+        if condition in duo_conditions and p_num not in condition:
+            continue
+        
         # Filtering logic based on label_mode
         if label_mode == 'feedback':
             label = int(has_feedback)
@@ -36,12 +40,11 @@ def load_eeg_data_from_pkl(directory, label_mode='feedback'):
             if 'gender' not in sample or sample['gender'] not in ['M', 'F']:
                 continue
             label = 1 if sample['gender'] == 'M' else 0
+            
 
         elif label_mode == 'sologroup':
-            if condition == 'T1P' or condition == 'T1Pn':
-                label = 0
-            elif p_num in condition:
-                label = 1
+            label = 0 if condition == 'T1P' or condition == 'T1Pn' else 1
+            
 
         elif label_mode == 'friendship':
             if 'friend_status' not in sample:
