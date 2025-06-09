@@ -26,6 +26,7 @@ def load_eeg_data_from_pkl(directory, label_mode='feedback'):
 
         condition = sample.get('condition', '')
         has_feedback = sample.get('has_feedback', False)
+        p_num = sample.get('participant_num')[-1]
 
         # Filtering logic based on label_mode
         if label_mode == 'feedback':
@@ -37,16 +38,13 @@ def load_eeg_data_from_pkl(directory, label_mode='feedback'):
             label = 1 if sample['gender'] == 'M' else 0
 
         elif label_mode == 'sologroup':
-            if condition != 'T1P' and condition != 'T3P':
-                continue
-            if not has_feedback:
-                continue
-            label = 0 if condition == 'T1P' else 1
+            if condition == 'T1P' or condition == 'T1Pn':
+                label = 0
+            elif p_num in condition:
+                label = 1
 
         elif label_mode == 'friendship':
             if 'friend_status' not in sample:
-                continue
-            if not has_feedback:
                 continue
             label = 1 if sample['friend_status'] == 'Yes' else 0
 
